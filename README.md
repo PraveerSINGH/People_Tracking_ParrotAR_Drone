@@ -1,0 +1,2 @@
+# People_Tracking_ParrotAR_Drone
+Here we present an autonomous people detection and tracking using a Parrot AR-Drone (version 2.0) as a part of our semester project jointly at Eurecom and Telecom Paris-tech. People detection is done using Histogram of Gradient (HOG) feature and tracking with a particle filter. All the control commands are implemented in ROS Hydro using Open-CV library. For more details kindly contact - praveersingh1990atgmail.com , rana.aakankshaatgmail.com
