@@ -1,0 +1,71 @@
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/drone4u/!svn/ver/90/code/demoARDrone/src/producer_consumer/base
+END
+basic_function.h
+K 25
+svn:wc:ra_dav:version-url
+V 82
+/drone4u/!svn/ver/104/code/demoARDrone/src/producer_consumer/base/basic_function.h
+END
+concurrent_queue.h
+K 25
+svn:wc:ra_dav:version-url
+V 83
+/drone4u/!svn/ver/89/code/demoARDrone/src/producer_consumer/base/concurrent_queue.h
+END
+cvmat_serialization.h
+K 25
+svn:wc:ra_dav:version-url
+V 86
+/drone4u/!svn/ver/89/code/demoARDrone/src/producer_consumer/base/cvmat_serialization.h
+END
+extended_thread.h
+K 25
+svn:wc:ra_dav:version-url
+V 82
+/drone4u/!svn/ver/89/code/demoARDrone/src/producer_consumer/base/extended_thread.h
+END
+global_data.h
+K 25
+svn:wc:ra_dav:version-url
+V 78
+/drone4u/!svn/ver/89/code/demoARDrone/src/producer_consumer/base/global_data.h
+END
+base_services.h
+K 25
+svn:wc:ra_dav:version-url
+V 80
+/drone4u/!svn/ver/97/code/demoARDrone/src/producer_consumer/base/base_services.h
+END
+message_data.h
+K 25
+svn:wc:ra_dav:version-url
+V 80
+/drone4u/!svn/ver/100/code/demoARDrone/src/producer_consumer/base/message_data.h
+END
+basic_function.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 84
+/drone4u/!svn/ver/104/code/demoARDrone/src/producer_consumer/base/basic_function.cpp
+END
+protected_var.h
+K 25
+svn:wc:ra_dav:version-url
+V 80
+/drone4u/!svn/ver/97/code/demoARDrone/src/producer_consumer/base/protected_var.h
+END
+extended_thread.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 84
+/drone4u/!svn/ver/89/code/demoARDrone/src/producer_consumer/base/extended_thread.cpp
+END
+global_data.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 80
+/drone4u/!svn/ver/89/code/demoARDrone/src/producer_consumer/base/global_data.cpp
+END

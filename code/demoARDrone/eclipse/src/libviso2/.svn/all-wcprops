@@ -1,0 +1,107 @@
+K 25
+svn:wc:ra_dav:version-url
+V 50
+/drone4u/!svn/ver/17/code/demoARDrone/src/libviso2
+END
+viso_stereo.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 66
+/drone4u/!svn/ver/17/code/demoARDrone/src/libviso2/viso_stereo.cpp
+END
+matrix.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/drone4u/!svn/ver/17/code/demoARDrone/src/libviso2/matrix.cpp
+END
+triangle.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/drone4u/!svn/ver/17/code/demoARDrone/src/libviso2/triangle.cpp
+END
+viso_stereo.h
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/drone4u/!svn/ver/11/code/demoARDrone/src/libviso2/viso_stereo.h
+END
+viso_mono.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/drone4u/!svn/ver/17/code/demoARDrone/src/libviso2/viso_mono.cpp
+END
+matrix.h
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/drone4u/!svn/ver/11/code/demoARDrone/src/libviso2/matrix.h
+END
+triangle.h
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/drone4u/!svn/ver/11/code/demoARDrone/src/libviso2/triangle.h
+END
+viso_mono.h
+K 25
+svn:wc:ra_dav:version-url
+V 62
+/drone4u/!svn/ver/17/code/demoARDrone/src/libviso2/viso_mono.h
+END
+viso.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/drone4u/!svn/ver/104/code/demoARDrone/src/libviso2/viso.cpp
+END
+reconstruction.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 69
+/drone4u/!svn/ver/17/code/demoARDrone/src/libviso2/reconstruction.cpp
+END
+matcher.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 62
+/drone4u/!svn/ver/11/code/demoARDrone/src/libviso2/matcher.cpp
+END
+filter.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/drone4u/!svn/ver/17/code/demoARDrone/src/libviso2/filter.cpp
+END
+timer.h
+K 25
+svn:wc:ra_dav:version-url
+V 58
+/drone4u/!svn/ver/11/code/demoARDrone/src/libviso2/timer.h
+END
+viso.h
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/drone4u/!svn/ver/17/code/demoARDrone/src/libviso2/viso.h
+END
+reconstruction.h
+K 25
+svn:wc:ra_dav:version-url
+V 67
+/drone4u/!svn/ver/11/code/demoARDrone/src/libviso2/reconstruction.h
+END
+matcher.h
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/drone4u/!svn/ver/11/code/demoARDrone/src/libviso2/matcher.h
+END
+filter.h
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/drone4u/!svn/ver/11/code/demoARDrone/src/libviso2/filter.h
+END

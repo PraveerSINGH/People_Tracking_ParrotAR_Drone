@@ -1,0 +1,470 @@
+/*
+ * sender_receiver.cpp
+ *
+ *  Created on: Aug 13, 2013
+ *      Author: truongnt
+ */
+
+#include "sender_receiver.h"
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include <opencv2/core/core.hpp>
+#include <boost/thread/thread.hpp>
+#include <opencv2/highgui/highgui.hpp>
+
+#include <unistd.h>
+#include <dirent.h>
+#include <sys/types.h> // for opendir(), readdir(), closedir()
+#include <sys/stat.h> // for stat()
+
+using boost::asio::ip::tcp;
+Connection_Manager GloConnect;
+
+
+boost::mutex mutex_closeConnection;
+
+void Connection_Manager::setCloseConnection(bool b) {
+	boost::mutex::scoped_lock lock(mutex_closeConnection);
+	mIsCloseConnection = b;
+}
+bool Connection_Manager::getCloseConnection() {
+	boost::mutex::scoped_lock lock(mutex_closeConnection);
+		return mIsCloseConnection;
+	}
+
+bool Connection_Manager::sendMessage(tcp::socket& socket, const MessageData& msg) {
+	try {
+		boost::asio::streambuf buf;
+		std::ostream os( &buf);
+		size_t rc;
+
+		boost::archive::text_oarchive ar( os );
+		ar << msg;
+
+		const size_t header = buf.size();
+		printing("body is " + utilities::NumberToString(header) + " bytes" );
+
+
+		// send header and buffer using scatter
+		std::vector<boost::asio::const_buffer> buffers;
+		buffers.push_back( boost::asio::buffer(&header, sizeof(header)) );
+		//--------------------------------------------------------------------------------------
+		if (sizeof(header) == 4) // in case 32 bits, add more 4 bits to align with 64bits system
+		{
+			printing("write more 4 bytes" );
+			unsigned int a = 0;
+			buffers.push_back(boost::asio::buffer(&a, sizeof(a)));
+		}
+		//--------------------------------------------------------------------------------------
+		buffers.push_back( buf.data() );
+
+
+		rc = boost::asio::write(
+				socket,
+				buffers);
+
+		printing("wrote " + utilities::NumberToString(rc) + " bytes" );
+		printing("sent a message successfully!");
+
+		return true;
+	}
+	catch (std::exception& e)
+	{
+		printing("[ERROR] " + std::string(e.what()));
+		return false;
+	}
+}
+
+MessageData Connection_Manager::getMessage(tcp::socket& soc) {
+	//try {
+	// read header
+	//boost::asio::streambuf buffers;
+	boost::system::error_code error;
+	size_t header;
+
+	soc.read_some(boost::asio::buffer( &header, sizeof(header) ), error);
+	//buffers.commit(sizeof(header));
+	//std::cout<<"size "<<sizeof(header)<<" "<<header<<std::endl;
+	printing("sizeof header " + utilities::NumberToString(sizeof(header)) + " bytes" );
+	printing("body is " + utilities::NumberToString(header) + " bytes" );
+	//--------------------------------------------------------------------------------------
+	if (sizeof(header) == 4) // in case 32 bits, add more 4 bits to align with 64bits system
+	{
+		printing("read more 4 bytes" );
+		unsigned int a;
+		soc.read_some(boost::asio::buffer( &a, sizeof(a) ), error);
+	}
+	//--------------------------------------------------------------------------------------
+	// read body
+	boost::asio::streambuf buf;
+	size_t rc = sizeof(int);
+	size_t remain = header;
+	//size_t sum(0);
+
+	while (rc > 0) {
+		rc = soc.read_some(buf.prepare(remain), error);
+		//printing2(error.message());
+		//printing2("remain " + utilities::NumberToString(remain) + " bytes" );
+		//		std::cout
+		//		<< "total " << sum + remain << "bytes"
+		//		<< " read " << rc << " bytes"
+		//		<< " remain " << remain << "bytes"
+		//		<< std::endl;
+		remain -= rc;
+		//sum += rc;
+		//http://www.boost.org/doc/libs/1_46_1/doc/html/boost_asio/reference/basic_streambuf.html
+		buf.commit( rc);//Move characters from the output sequence to the input sequence.
+	}
+
+	// deserialize
+	std::istream is( &buf );
+	boost::archive::text_iarchive ar( is );
+
+	MessageData msg;
+
+	ar >> msg;
+	return msg;
+	//}
+	//catch (std::exception& e)
+	//{
+	//	printing("[ERROR] " + std::string(e.what()));
+	//	return *(new MessageData);
+	//}
+
+}
+
+//-----------------------------------------------------------------------------
+Connection_Manager::Connection_Manager(const std::string&portSrc,
+		const std::string& host, const std::string& port)
+//:m_IoService()
+//mrecv(portSrc),
+//msndr(host, port)
+{
+	//m_IoService = shared_ptr<boost::asio::io_service>(new boost::asio::io_service());
+	mportSrc = portSrc;
+	mportDst = port;
+	mhostDst = host;
+
+	printing(mportSrc + mhostDst + mportDst);
+	//this->msndr.start();
+	printing("stop constructor");
+
+	this->mconnectionState = ConnectionState::Step1;
+	this->setCloseConnection(false);
+}
+
+void Connection_Manager::runClientSideSender() {
+	try
+	{
+		boost::asio::io_service io_service;
+
+		tcp::resolver resolver(io_service);
+		tcp::socket socket(io_service);
+
+		MessageData msg;
+
+		while (true) {
+			if (this->getCloseConnection()) break;
+			if (this->checkConnectionState(ConnectionState::Step2)) {
+				printing("Step 2");
+
+				tcp::resolver::query query(this->mhostDst, this->mportDst);
+				printing("Open connection to " + this->mhostDst + " " + this->mportDst);
+				tcp::resolver::iterator endpoint_iterator = resolver.resolve(query);
+				tcp::resolver::iterator end;
+
+				boost::system::error_code error = boost::asio::error::host_not_found;
+				while (error && endpoint_iterator != end)
+				{
+					socket.close();
+					socket.connect(*endpoint_iterator++, error);
+				}
+				if (error)
+					throw boost::system::system_error(error);
+
+				printing("Connect to server successfully!");
+				this->changeConnectionState(ConnectionState::Step3);
+				continue;
+			}
+			if (this->checkConnectionState(ConnectionState::Step4)) {
+				printing("Step 4");
+				msg = MessageData::createMessage(Command::ClientSendInfoToServer);
+				this->sendMessage(socket, msg);
+
+				this->changeConnectionState(ConnectionState::inactive);//back to step 3 and wait for comming connection
+				continue;
+			}
+			if (this->checkConnectionState(ConnectionState::ConnectioEstablished)) {
+				printing("----------------ConnectioEstablished------------------");
+
+				this->changeConnectionState(ConnectionState::activeConnection);
+				continue;
+			}
+			if (this->checkConnectionState(ConnectionState::activeConnection)) {
+				//printing("activeConnection");
+				while (true) {
+					GloQueueData.wait_and_pop(msg);
+					printing("get value successfully!");
+
+					boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+					boost::posix_time::time_duration diff = current_time - msg.mTimeStamp;
+					//current_time.
+					if (diff.total_milliseconds() > 1000) {
+						//drop packet
+						printing("drop old packet!");
+						continue;
+					}
+
+					if (msg.isCommandMessage(Command::CloseConnection)) {
+						this->setCloseConnection(true);
+						break;
+					}
+					//printing("msg content before send: " + utilities::NumberToString(msg.mLapNo));
+					this->sendMessage(socket, msg);
+				}
+
+//
+//				//MessageData msg;
+//				//http://stackoverflow.com/questions/3554120/open-directory-using-c
+//				struct dirent *pDirent;
+//				DIR *pDir = opendir (GlostrSaveSimulationFolder.c_str());
+//				if (pDir == NULL) {
+//					printing("Cannot open directory " + GlostrSaveSimulationFolder);
+//					return;
+//				}
+//
+//				while ((pDirent = readdir(pDir)) != NULL) {
+//					//prepare message
+//					if (strcmp(pDirent->d_name, "..")!= 0 &&  strcmp(pDirent->d_name, ".")!= 0
+//							&&  strcmp(pDirent->d_name, ".svn")!= 0) {
+//						//printf ("[%s]\n", pDirent->d_name);
+//						printing(pDirent->d_name);
+//						MessageData msg;
+//						msg.mImg = cv::imread(GlostrSaveSimulationFolder + "/" + string(pDirent->d_name), 1);
+//
+//						//send a message
+//						this->sendMessage(socket, msg);
+//					}
+//				}
+//				closedir (pDir);
+
+				//packet finish connection
+				//it also depend on number of consumer :D
+				msg = MessageData::createMessage(Command::CloseConnection);
+				this->sendMessage(socket, msg);
+				this->setCloseConnection(true);
+				printing((msg.isCommandMessage(Command::CloseConnection) ? "true" : "false"));
+				break;
+			}
+		}
+	}
+	catch (std::exception& e)
+	{
+		printing("[ERROR] " + std::string(e.what()));
+	}
+}
+
+boost::asio::io_service m_IoService;
+void Connection_Manager::testrunClientSideReceiver(shared_ptr<tcp::socket> pSocket) {
+	try
+	{
+		m_pAcceptor->accept(*pSocket);
+		this->changeConnectionState(ConnectionState::ConnectioEstablished);
+		printing("---->socket accepted!");
+	}
+	catch (std::exception& e)
+	{
+		printing("[ERROR] " + std::string(e.what()));
+	}
+}
+void Connection_Manager::runClientSideReceiver() {
+	try
+	{
+
+		//boost::asio::io_service io_service;
+		//tcp::acceptor acceptor_(io_service, tcp::endpoint(tcp::v4(), utilities::StringToNumber(this->mportSrc)));
+//		tcp::socket currentsoc(io_service);
+
+		while (true) {
+			if (this->getCloseConnection()) break;
+			if (this->checkConnectionState(ConnectionState::Step3)) {
+				printing("Step 3");
+				//acceptor_.accept(currentsoc);
+
+				m_pAcceptor = shared_ptr<tcp::acceptor>( new tcp::acceptor(m_IoService, tcp::endpoint(tcp::v4(), utilities::StringToNumber(this->mportSrc))) );
+				pSocket = shared_ptr<tcp::socket>(new tcp::socket(m_IoService));
+//
+//				m_pAcceptor->async_accept(*pSocket, boost::bind(&Connection_Manager::testrunClientSideReceiver, this, pSocket));
+//				//m_IoService.run();
+
+
+				//create a new thread to control accect by ourself
+				boost::thread t(&Connection_Manager::testrunClientSideReceiver, this, pSocket);
+				t.detach();
+
+				this->changeConnectionState(ConnectionState::Step4);
+				//break;
+				continue;
+			}
+
+			if (this->checkConnectionState(ConnectionState::activeConnection)) {
+				//printing("activeConnection");
+				continue;
+			}
+		}
+	}
+	catch (std::exception& e)
+	{
+		printing("[ERROR] " + std::string(e.what()));
+	}
+}
+
+//-----------------------------------------------------------------------------
+void Connection_Manager::runServerSideSender() {
+	try
+	{
+		boost::asio::io_service io_service;
+		tcp::resolver resolver(io_service);
+
+		tcp::socket socket(io_service);
+		while (true) {
+			if (this->getCloseConnection()) {
+				printing("stopping runServerSideSender");
+				break;
+			}
+			if (this->checkConnectionState(ConnectionState::Step6)) {
+				printing("Step 6");
+
+				tcp::resolver::query query(this->mhostDst, this->mportDst);
+				printing("Open connection to " + this->mhostDst + " " + this->mportDst);
+				tcp::resolver::iterator endpoint_iterator = resolver.resolve(query);
+				tcp::resolver::iterator end;
+
+
+
+				boost::system::error_code error = boost::asio::error::host_not_found;
+				while (error && endpoint_iterator != end)
+				{
+					socket.close();
+					socket.connect(*endpoint_iterator++, error);
+				}
+				if (error)
+					throw boost::system::system_error(error);
+
+				printing("Connect to server successfully!");
+				this->changeConnectionState(ConnectionState::ConnectioEstablished);
+				continue;
+			}
+
+			if (this->checkConnectionState(ConnectionState::ConnectioEstablished)) {
+				printing("----------------ConnectioEstablished------------------");
+				this->changeConnectionState(ConnectionState::activeConnection);
+				continue;
+			}
+			if (this->checkConnectionState(ConnectionState::activeConnection)) {
+				//printing("activeConnection");
+				continue;
+			}
+		}
+	}
+	catch (std::exception& e)
+	{
+		printing("[ERROR] " + std::string(e.what()));
+	}
+}
+
+void Connection_Manager::testrunServerSideReceiver(shared_ptr<tcp::socket> pSocket) {
+	try
+	{
+		printing("running testrunServerSideReceiver!");
+		m_pAcceptor->accept(*pSocket);
+		this->changeConnectionState(ConnectionState::Step5);
+		printing("---->socket accepted!");
+		printing("stopping testrunServerSideReceiver");
+	}
+	catch (std::exception& e)
+	{
+		printing("[ERROR] " + std::string(e.what()));
+	}
+}
+
+void Connection_Manager::runServerSideReceiver() {
+	try
+	{
+		boost::asio::io_service io_service;
+		//tcp::acceptor acceptor_(io_service, tcp::endpoint(tcp::v4(), utilities::StringToNumber(this->mportSrc)));
+		//tcp::socket currentsoc(io_service);
+
+		MessageData msg;
+		while (true) {
+			if (this->getCloseConnection()) {
+				printing("stopping runServerSideReceiver");
+				break;
+			}
+			if (this->checkConnectionState(ConnectionState::Step1)) {
+				printing("Step 1");
+
+				m_pAcceptor = shared_ptr<tcp::acceptor>( new tcp::acceptor(m_IoService, tcp::endpoint(tcp::v4(), utilities::StringToNumber(this->mportSrc))) );
+				pSocket = shared_ptr<tcp::socket>(new tcp::socket(m_IoService));
+				//create a new thread to control accect by ourself
+				boost::thread t(&Connection_Manager::testrunServerSideReceiver, this, pSocket);
+				t.detach();
+				this->changeConnectionState(ConnectionState::inactive);
+//
+//				acceptor_.accept(currentsoc);
+//				this->changeConnectionState(ConnectionState::Step5);
+				continue;
+			}
+			if (this->checkConnectionState(ConnectionState::Step5)) {
+				printing("Step 5");
+				while(true) {
+					msg = this->getMessage(*pSocket);
+					printing("received data");
+					if (msg.isCommandMessage(Command::ClientSendInfoToServer)) {
+						this->changeConnectionState(ConnectionState::Step6);
+						break;
+					}
+				}
+
+				continue;
+			}
+			if (this->checkConnectionState(ConnectionState::activeConnection)) {
+				printing("activeConnection");
+				while(true) {
+					msg = this->getMessage(*pSocket);
+					//printing("received data");
+					boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+					boost::posix_time::time_duration diff = current_time - msg.mTimeStamp;
+					logging1("TIME: msg queue, send", diff.total_milliseconds());
+
+					GloQueueData.push(msg);
+					if (msg.isCommandMessage(Command::CloseConnection)) {
+						this->setCloseConnection(true);
+						break;
+					}
+				}
+				continue;
+			}
+
+			if (msg.isCommandMessage(Command::CloseConnection)) {
+				break;
+			}
+		}
+	}
+	catch (std::exception& e)
+	{
+		printing("[ERROR] " + std::string(e.what()));
+	}
+}
+//-----------------------------------------------------------------------------
+boost::mutex mutex_connectionState;
+bool Connection_Manager::checkConnectionState(const ConnectionState& currentState) {
+	boost::mutex::scoped_lock lock(mutex_connectionState);
+	if (this->mconnectionState == currentState) return true;
+	return false;
+}
+
+void Connection_Manager::changeConnectionState(const ConnectionState& currentState) {
+	boost::mutex::scoped_lock lock(mutex_connectionState);
+	this->mconnectionState = currentState;
+}

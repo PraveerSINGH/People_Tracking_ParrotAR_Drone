@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?fileVersion 4.0.0?>
+
+<cproject storage_type_id="org.eclipse.cdt.core.XmlProjectDescriptionStorage">
+	<storageModule moduleId="org.eclipse.cdt.core.settings">
+		<cconfiguration id="cdt.managedbuild.toolchain.gnu.base.1335289192.656812945.917296346.746730810">
+			<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="cdt.managedbuild.toolchain.gnu.base.1335289192.656812945.917296346.746730810" moduleId="org.eclipse.cdt.core.settings" name="default">
+				<externalSettings/>
+				<extensions>
+					<extension id="org.eclipse.cdt.core.ELF" point="org.eclipse.cdt.core.BinaryParser"/>
+					<extension id="org.eclipse.cdt.core.GmakeErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+					<extension id="org.eclipse.cdt.core.CWDLocator" point="org.eclipse.cdt.core.ErrorParser"/>
+					<extension id="org.eclipse.cdt.core.GCCErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+					<extension id="org.eclipse.cdt.core.GASErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+					<extension id="org.eclipse.cdt.core.GLDErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+				</extensions>
+			</storageModule>
+			<storageModule moduleId="cdtBuildSystem" version="4.0.0">
+				<configuration artifactName="libHawaii" buildProperties="" description="" id="cdt.managedbuild.toolchain.gnu.base.1335289192.656812945.917296346.746730810" name="default" parent="org.eclipse.cdt.build.core.emptycfg">
+					<folderInfo id="cdt.managedbuild.toolchain.gnu.base.1335289192.656812945.917296346.746730810." name="/" resourcePath="">
+						<toolChain id="cdt.managedbuild.toolchain.gnu.base.637358044" name="cdt.managedbuild.toolchain.gnu.base" superClass="cdt.managedbuild.toolchain.gnu.base">
+							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="cdt.managedbuild.target.gnu.platform.base.1374567696" name="Debug Platform" osList="linux,hpux,aix,qnx" superClass="cdt.managedbuild.target.gnu.platform.base"/>
+							<builder buildPath="${ProjDirPath}/.." id="cdt.managedbuild.target.gnu.builder.base.1133793050" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder" parallelBuildOn="true" superClass="cdt.managedbuild.target.gnu.builder.base">
+								<outputEntries>
+									<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="outputPath" name=""/>
+								</outputEntries>
+							</builder>
+							<tool id="cdt.managedbuild.tool.gnu.archiver.base.1882054167" name="GCC Archiver" superClass="cdt.managedbuild.tool.gnu.archiver.base"/>
+							<tool id="cdt.managedbuild.tool.gnu.cpp.compiler.base.726531450" name="GCC C++ Compiler" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.base">
+								<option id="gnu.cpp.compiler.option.preprocessor.def.39295301" name="Defined symbols (-D)" superClass="gnu.cpp.compiler.option.preprocessor.def" valueType="definedSymbols">
+									<listOptionValue builtIn="false" value="__GXX_EXPERIMENTAL_CXX0X__"/>
+									<listOptionValue builtIn="false" value="__OPTIMIZE__"/>
+									<listOptionValue builtIn="false" value="__MMX__"/>
+									<listOptionValue builtIn="false" value="__SSE__"/>
+									<listOptionValue builtIn="false" value="__SSE2__"/>
+									<listOptionValue builtIn="false" value="__SSE3__"/>
+									<listOptionValue builtIn="false" value="_OPENMP"/>
+									<listOptionValue builtIn="false" value="constexpr=const"/>
+									<listOptionValue builtIn="false" value="override"/>
+									<listOptionValue builtIn="false" value="final"/>
+									<listOptionValue builtIn="false" value="HAWAII_CUDA"/>
+									<listOptionValue builtIn="false" value="INSTRSET=6"/>
+									<listOptionValue builtIn="false" value="nullptr=0"/>
+									<listOptionValue builtIn="false" value="__CUDACC__"/>
+								</option>
+								<option id="gnu.cpp.compiler.option.include.paths.1513189611" name="Include paths (-I)" superClass="gnu.cpp.compiler.option.include.paths" valueType="includePath">
+									<listOptionValue builtIn="false" value="/home/truongnt/code/rosWorkspace/ardrone_autonomy/msg_gen/cpp/include"/>
+									<listOptionValue builtIn="false" value="/home/truongnt/code/rosWorkspace/ardrone_autonomy/srv_gen/cpp/include"/>
+									<listOptionValue builtIn="false" value="/opt/ros/groovy/include"/>
+									<listOptionValue builtIn="false" value="/home/truongnt/repos/code/demoARDrone/eclipse/inc"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/drone4u - demoARDrone/drone4u - libHawaii/inc}&quot;"/>
+									<listOptionValue builtIn="false" value="/usr/local/cuda/include"/>
+									<listOptionValue builtIn="false" value="/usr/local/cuda/samples/common/inc"/>
+									<listOptionValue builtIn="false" value="/usr/local/include"/>
+									<listOptionValue builtIn="false" value="/usr/include"/>
+									<listOptionValue builtIn="false" value="/usr/include/boost"/>
+								</option>
+								<inputType id="cdt.managedbuild.tool.gnu.cpp.compiler.input.239909037" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.input"/>
+							</tool>
+							<tool id="cdt.managedbuild.tool.gnu.c.compiler.base.2034449580" name="GCC C Compiler" superClass="cdt.managedbuild.tool.gnu.c.compiler.base">
+								<option id="gnu.c.compiler.option.preprocessor.def.symbols.1126072526" name="Defined symbols (-D)" superClass="gnu.c.compiler.option.preprocessor.def.symbols" valueType="definedSymbols">
+									<listOptionValue builtIn="false" value="__GXX_EXPERIMENTAL_CXX0X__"/>
+									<listOptionValue builtIn="false" value="__OPTIMIZE__"/>
+									<listOptionValue builtIn="false" value="__MMX__"/>
+									<listOptionValue builtIn="false" value="__SSE__"/>
+									<listOptionValue builtIn="false" value="__SSE2__"/>
+									<listOptionValue builtIn="false" value="__SSE3__"/>
+									<listOptionValue builtIn="false" value="_OPENMP"/>
+									<listOptionValue builtIn="false" value="constexpr=const"/>
+									<listOptionValue builtIn="false" value="override"/>
+									<listOptionValue builtIn="false" value="final"/>
+									<listOptionValue builtIn="false" value="HAWAII_CUDA"/>
+									<listOptionValue builtIn="false" value="INSTRSET=6"/>
+									<listOptionValue builtIn="false" value="nullptr=0"/>
+									<listOptionValue builtIn="false" value="__CUDACC__"/>
+								</option>
+								<option id="gnu.c.compiler.option.include.paths.1759126894" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" valueType="includePath">
+									<listOptionValue builtIn="false" value="/home/truongnt/code/rosWorkspace/ardrone_autonomy/msg_gen/cpp/include"/>
+									<listOptionValue builtIn="false" value="/home/truongnt/code/rosWorkspace/ardrone_autonomy/srv_gen/cpp/include"/>
+									<listOptionValue builtIn="false" value="/opt/ros/groovy/include"/>
+									<listOptionValue builtIn="false" value="/home/truongnt/repos/code/demoARDrone/eclipse/inc"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/drone4u - demoARDrone/drone4u - libHawaii/inc}&quot;"/>
+									<listOptionValue builtIn="false" value="/usr/local/cuda/include"/>
+									<listOptionValue builtIn="false" value="/usr/local/cuda/samples/common/inc"/>
+									<listOptionValue builtIn="false" value="/usr/local/include"/>
+									<listOptionValue builtIn="false" value="/usr/include"/>
+									<listOptionValue builtIn="false" value="/usr/include/boost"/>
+								</option>
+								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.1596496821" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
+							</tool>
+							<tool id="cdt.managedbuild.tool.gnu.c.linker.base.1531740753" name="GCC C Linker" superClass="cdt.managedbuild.tool.gnu.c.linker.base"/>
+							<tool id="cdt.managedbuild.tool.gnu.cpp.linker.base.324060683" name="GCC C++ Linker" superClass="cdt.managedbuild.tool.gnu.cpp.linker.base">
+								<option id="gnu.cpp.link.option.libs.1429887635" name="Libraries (-l)" superClass="gnu.cpp.link.option.libs" valueType="libs">
+									<listOptionValue builtIn="false" value="-lpthread"/>
+									<listOptionValue builtIn="false" value="-lboost_system"/>
+									<listOptionValue builtIn="false" value="-lboost_thread"/>
+									<listOptionValue builtIn="false" value="boost_serialization"/>
+									<listOptionValue builtIn="false" value="boost_iostreams"/>
+									<listOptionValue builtIn="false" value="-Wcomment"/>
+								</option>
+								<option id="gnu.cpp.link.option.paths.777278312" name="Library search path (-L)" superClass="gnu.cpp.link.option.paths" valueType="libPaths">
+									<listOptionValue builtIn="false" value="/usr/lib"/>
+								</option>
+								<inputType id="cdt.managedbuild.tool.gnu.cpp.linker.input.1688614608" superClass="cdt.managedbuild.tool.gnu.cpp.linker.input">
+									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
+									<additionalInput kind="additionalinput" paths="$(LIBS)"/>
+								</inputType>
+							</tool>
+							<tool id="cdt.managedbuild.tool.gnu.assembler.base.806313888" name="GCC Assembler" superClass="cdt.managedbuild.tool.gnu.assembler.base">
+								<option id="gnu.both.asm.option.include.paths.74727324" name="Include paths (-I)" superClass="gnu.both.asm.option.include.paths" valueType="includePath">
+									<listOptionValue builtIn="false" value="/home/truongnt/code/rosWorkspace/ardrone_autonomy/msg_gen/cpp/include"/>
+									<listOptionValue builtIn="false" value="/home/truongnt/code/rosWorkspace/ardrone_autonomy/srv_gen/cpp/include"/>
+									<listOptionValue builtIn="false" value="/opt/ros/groovy/include"/>
+									<listOptionValue builtIn="false" value="/home/truongnt/repos/code/demoARDrone/eclipse/inc"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/drone4u - demoARDrone/drone4u - libHawaii/inc}&quot;"/>
+									<listOptionValue builtIn="false" value="/usr/local/cuda/include"/>
+									<listOptionValue builtIn="false" value="/usr/local/cuda/samples/common/inc"/>
+									<listOptionValue builtIn="false" value="/usr/local/include"/>
+									<listOptionValue builtIn="false" value="/usr/include"/>
+									<listOptionValue builtIn="false" value="/usr/include/boost"/>
+								</option>
+								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.1915303377" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
+							</tool>
+						</toolChain>
+					</folderInfo>
+					<sourceEntries>
+						<entry excluding="producer_consumer" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+					</sourceEntries>
+				</configuration>
+			</storageModule>
+			<storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>
+		</cconfiguration>
+	</storageModule>
+	<storageModule moduleId="cdtBuildSystem" version="4.0.0">
+		<project id="unitTestHawii.null.967285118" name="unitTestHawii"/>
+	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
+	<storageModule moduleId="refreshScope" versionNumber="1">
+		<resource resourceType="PROJECT" workspacePath="/drone4u - demoARDrone"/>
+	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
+	<storageModule moduleId="scannerConfiguration">
+		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.base.965490064;cdt.managedbuild.toolchain.gnu.base.965490064.1438744925;cdt.managedbuild.tool.gnu.c.compiler.base.1773920090;cdt.managedbuild.tool.gnu.c.compiler.input.929075470">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.base.1335289192.656812945.917296346.746730810;cdt.managedbuild.toolchain.gnu.base.1335289192.656812945.917296346.746730810.;cdt.managedbuild.tool.gnu.c.compiler.base.2034449580;cdt.managedbuild.tool.gnu.c.compiler.input.1596496821">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCManagedMakePerProjectProfileC"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.base.965490064;cdt.managedbuild.toolchain.gnu.base.965490064.1438744925;cdt.managedbuild.tool.gnu.cpp.compiler.base.1350400197;cdt.managedbuild.tool.gnu.cpp.compiler.input.515037608">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.base.1335289192.1026227521;cdt.managedbuild.toolchain.gnu.base.1335289192.1026227521.;cdt.managedbuild.tool.gnu.cpp.compiler.base.48739924;cdt.managedbuild.tool.gnu.cpp.compiler.input.945450817">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCManagedMakePerProjectProfileCPP"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.base.1335289192.656812945.917296346.746730810;cdt.managedbuild.toolchain.gnu.base.1335289192.656812945.917296346.746730810.;cdt.managedbuild.tool.gnu.cpp.compiler.base.726531450;cdt.managedbuild.tool.gnu.cpp.compiler.input.239909037">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCManagedMakePerProjectProfileCPP"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.toolchain.gnu.base.1335289192.1026227521;cdt.managedbuild.toolchain.gnu.base.1335289192.1026227521.;cdt.managedbuild.tool.gnu.c.compiler.base.551076149;cdt.managedbuild.tool.gnu.c.compiler.input.1771497054">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCManagedMakePerProjectProfileC"/>
+		</scannerConfigBuildInfo>
+	</storageModule>
+</cproject>

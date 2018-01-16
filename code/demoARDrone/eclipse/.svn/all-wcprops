@@ -1,0 +1,35 @@
+K 25
+svn:wc:ra_dav:version-url
+V 45
+/drone4u/!svn/ver/39/code/demoARDrone/eclipse
+END
+.project
+K 25
+svn:wc:ra_dav:version-url
+V 54
+/drone4u/!svn/ver/18/code/demoARDrone/eclipse/.project
+END
+.cproject
+K 25
+svn:wc:ra_dav:version-url
+V 55
+/drone4u/!svn/ver/39/code/demoARDrone/eclipse/.cproject
+END
+src
+K 25
+svn:wc:ra_dav:version-url
+V 49
+/drone4u/!svn/ver/11/code/demoARDrone/eclipse/src
+END
+bin
+K 25
+svn:wc:ra_dav:version-url
+V 49
+/drone4u/!svn/ver/11/code/demoARDrone/eclipse/bin
+END
+data
+K 25
+svn:wc:ra_dav:version-url
+V 50
+/drone4u/!svn/ver/11/code/demoARDrone/eclipse/data
+END

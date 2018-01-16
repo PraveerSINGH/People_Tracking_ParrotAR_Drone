@@ -1,0 +1,803 @@
+// Copyright (C) 2013 by - FZI Forschungszentrum Informatik am Karlsruher Institut fuer Technologie
+//                       - Institut Eurécom
+//                       - Télécom ParisTech
+// 
+// Author: Benjamin Ranft (benjamin.ranft@web.de)
+// 
+// This file is part of demoARDrone.
+// 
+// demoARDrone is free software: you can redistribute it and/or modify it under the terms of the GNU General Public 
+// License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later 
+// version.
+// 
+// demoARDrone is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied 
+// warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// 
+// You should have received a copy of the GNU General Public License along with libHawaii. If not, see 
+// <http://www.gnu.org/licenses/>.
+
+
+// base class for building actual AR.Drone 2.0 applications upon
+// =============================================================
+
+#include "appBase.h"
+#include "hawaii/common/error.h"
+#include <ros/ros.h>
+#include <image_transport/image_transport.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <std_msgs/Empty.h>
+#include <std_srvs/Empty.h>
+#pragma GCC diagnostic pop
+#include <sensor_msgs/image_encodings.h>
+#include <ardrone_autonomy/CamSelect.h>
+#include <ardrone_autonomy/LedAnim.h>
+#include <ardrone_autonomy/FlightAnim.h>
+#include <SDL/SDL.h>
+#include <SDL/SDL_mixer.h>
+
+// helpers only used here
+namespace {
+	
+	// create a "continuous" value from two keyboard keys, e.g. forward/backward, left/right, up/down etc.
+	class KeyboardSmoother {
+		
+		// internal state, initialization
+		protected:
+		double state ;
+		public:
+		KeyboardSmoother() :
+			state( 0.0 ) {
+		}
+		
+		// update and read
+		public:
+		double operator ()( const bool more,
+		                    const bool less ) {
+			
+			// ramp state up or down if only one of the keys is pressed
+			if(  more && !less ) { this->state += 0.10 ; this->state = std::min(  1.0, std::max( 0.0, this->state ) ) ; }
+			if( !more &&  less ) { this->state -= 0.10 ; this->state = std::max( -1.0, std::min( 0.0, this->state ) ) ; }
+			
+			// fade state down if no key is pressed, but implicitly do nothing if both are
+			if( !more && !less ) {
+				if( this->state > 0.0 ) { this->state = std::max( 0.0, this->state - 0.10 ) ; }
+				else                    { this->state = std::min( 0.0, this->state + 0.10 ) ; }
+			}
+			
+			// return the updated value
+			return this->state ;
+		}
+		
+		// read without update
+		public:
+		operator double() { return this->state ; }
+		
+	} ; // class "KeyboardSmoother"
+	
+	// normalize the raw values from a gamepad's analog sticks to [-1.0 1.0] and triggers to [0.0 1.0]
+	// developer note: A trigger starts at 0 before being pressed for the first time, but later goes all the way back to 
+	//                 -32768 when released. The condition below works around this issue.
+	void normalizeStick( const short   valueRaw,
+	                           double& valueNorm ) {
+		if( valueRaw < 0 ) { valueNorm = (double)valueRaw / 32768.0 ; }
+		else               { valueNorm = (double)valueRaw / 32767.0 ; }
+	}
+	void normalizeTrigger( const short   valueRaw,
+	                             double& valueNorm ) {
+		if( valueRaw != 0 || valueNorm != 0.0 ) {
+			valueNorm = ( valueRaw + 32768.0 ) / 65535.0 ;
+		}
+	}
+
+} // anonymous namespace
+
+// wrapper for calling ROS services
+// developer note: Callings services always fails while playing back a .bag file. The loop below would then block the
+//                 whole application.
+#if 0
+	#define ROS_SERVICE_CALL( call ) {                                          \
+		while( !call ) {                                                         \
+			std::cout << "WARNING: failed to call ROS service \""                 \
+			          << #call                                                    \
+			          << "\", trying again..."                                    \
+			          << std::endl ;                                              \
+			boost::this_thread::sleep( boost::posix_time::milliseconds( 250 ) ) ; \
+		}                                                                        \
+	}
+#else
+	#define ROS_SERVICE_CALL( call ) call
+#endif
+
+// connection to ROS using "pimpl" idiom
+class DroneAppBase::ConnROS {
+	
+	// allow access by base drone application
+	friend class DroneAppBase ;
+	
+	// instance whose member this is
+	protected:
+	DroneAppBase* const membee ;
+	
+	// automatically initialize and shut down ROS
+	private:
+	struct InitializerROS {
+		InitializerROS() {
+			int argc = 0 ;
+			ros::init( argc, nullptr, "droneApp" ) ;
+		}
+		~InitializerROS() {
+			ros::shutdown() ;
+		}
+	} initializerROS ;
+	
+	// base connection
+	protected:
+	ros::NodeHandle nodeHandle ;
+	image_transport::ImageTransport imageTransport ;
+	
+	// incoming sensor data
+	protected:
+	image_transport::Subscriber subsImageFront  ;
+	image_transport::Subscriber subsImageBottom ;
+	ros::Subscriber             subsCameraInfo  ;
+	ros::Subscriber             subsNavdata     ;
+	
+	// outgoing control commands
+	protected:
+	ros::Publisher publMovement ;
+	ros::Publisher publTakeOff  ;
+	ros::Publisher publLand     ;
+	ros::Publisher publReset    ;
+	ros::ServiceClient clntFlatTrim   ;
+	ros::ServiceClient clntIMURecalib ;
+	ros::ServiceClient clntCamSelect  ;
+	ros::ServiceClient clntLedAnim    ;
+	ros::ServiceClient clntFlightAnim ;
+	
+	// concurrently process different callbacks
+	protected:
+	boost::scoped_ptr< ros::AsyncSpinner > spinner ;
+	void start( const unsigned int threads = 1 ) {
+		this->spinner.reset( new ros::AsyncSpinner( threads ) ) ;
+		this->spinner->start() ;
+	}
+	void stop() {
+		if( this->spinner ) { this->spinner->stop() ; }
+	}
+	
+	// initialize all
+	protected:
+	ConnROS( DroneAppBase* const membeeArg ) :
+		membee( membeeArg ),
+		initializerROS(),
+		nodeHandle(),
+		imageTransport( nodeHandle ),
+		subsImageFront(  imageTransport.subscribe( "ardrone/front/image_raw",  1, &DroneAppBase::callbackImageFront,  this->membee ) ),
+		subsImageBottom( imageTransport.subscribe( "ardrone/bottom/image_raw", 1, &DroneAppBase::callbackImageBottom, this->membee ) ),
+		subsCameraInfo(  nodeHandle.subscribe(     "ardrone/camera_info",      1, &DroneAppBase::callbackCameraInfo,  this->membee ) ),
+		subsNavdata(     nodeHandle.subscribe(     "ardrone/navdata",          1, &DroneAppBase::callbackNavdata,     this->membee ) ),
+		publMovement( nodeHandle.advertise< geometry_msgs::Twist >( "cmd_vel",         1 ) ),
+		publTakeOff(  nodeHandle.advertise< std_msgs::Empty      >( "ardrone/takeoff", 1 ) ),
+		publLand(     nodeHandle.advertise< std_msgs::Empty      >( "ardrone/land",    1 ) ),
+		publReset(    nodeHandle.advertise< std_msgs::Empty      >( "ardrone/reset",   1 ) ),
+		clntFlatTrim(   nodeHandle.serviceClient< std_srvs::Empty              >( "ardrone/flattrim"           ) ),
+		clntIMURecalib( nodeHandle.serviceClient< std_srvs::Empty              >( "ardrone/imu_recalib"        ) ),
+		clntCamSelect(  nodeHandle.serviceClient< ardrone_autonomy::CamSelect  >( "ardrone/setcamchannel"      ) ),
+		clntLedAnim(    nodeHandle.serviceClient< ardrone_autonomy::LedAnim    >( "ardrone/setledanimation"    ) ),
+		clntFlightAnim( nodeHandle.serviceClient< ardrone_autonomy::FlightAnim >( "ardrone/setflightanimation" ) ) {
+	}
+	
+
+
+} ; // class "DroneAppBase::ConnROS"
+
+// c'tor to optionally select the bottom instead of the front camera
+DroneAppBase::DroneAppBase( bool cameraBottomNotFrontArg ) :
+	
+	// parameters
+	cameraBottomNotFront( cameraBottomNotFrontArg ),
+	
+	// sensor data
+	imageFront(  imageFrontReal  ), 
+	imageBottom( imageBottomReal ),
+	navdata(     navdataReal     ),
+	
+	// buffered poses based on drone's on-board odometry, read-only public accessors
+	rotationImageFrontReal(  cv::Vec3d::all( NAN ) ),
+	rotationImageBottomReal( cv::Vec3d::all( NAN ) ),
+	translationImageFrontReal(  cv::Vec3d::all( NAN ) ),
+	translationImageBottomReal( cv::Vec3d::all( NAN ) ),
+	odoDrone( this->odoDroneReal ),
+	rotationImageFront(  this->rotationImageFrontReal  ),
+	rotationImageBottom( this->rotationImageBottomReal ),
+	translationImageFront(  this->translationImageFrontReal  ),
+	translationImageBottom( this->translationImageBottomReal ),
+	
+	// control commands and status
+	engagedReal( false ),
+	engaged( engagedReal ),
+	
+	// undistort the images
+	undistorterFrontInit(  false ),
+	undistorterBottomInit( false ),
+	
+	// camera matrices and interesting scalars
+	cameraFront(  this->undistorterFront.cameraDst  ),
+	cameraBottom( this->undistorterBottom.cameraDst ),
+	focalLengthFrontU(     this->cameraFront(  0, 0 ) ),
+	focalLengthFrontV(     this->cameraFront(  1, 1 ) ),
+	focalLengthBottomU(    this->cameraBottom( 0, 0 ) ),
+	focalLengthBottomV(    this->cameraBottom( 1, 1 ) ),
+	principalPointFrontU(  this->cameraFront(  0, 2 ) ),
+	principalPointFrontV(  this->cameraFront(  1, 2 ) ),
+	principalPointBottomU( this->cameraBottom( 0, 2 ) ),
+	principalPointBottomV( this->cameraBottom( 1, 2 ) ),
+	
+	// manual flight via keyboard or gamepad
+	keystatesReal( nullptr                                ), keystates( keystatesReal ),
+	crossReal(     SDL_HAT_CENTERED                       ), cross(     crossReal     ),
+	analogReal(    { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f } ), analog(    analogReal    ),
+	buttonsReal(   { 0, 0, 0, 0, 0, 0, 0, 0 }             ), buttons(   buttonsReal   ),
+	
+	// battery state monitoring
+	batteryPercentPrev( 100.0f ),
+	
+	// watch dog helpers
+	watchdogRunning( false ),
+	watchdogTimer(   false ) {
+	
+	// don't enable integral control before autonomous flight is engaged
+	this->commands.controllersIntegratorDisable() ;
+	this->commands.controllersReset() ; 
+	
+	// connection to ROS using "pimpl" idiom
+	this->connROS.reset( new DroneAppBase::ConnROS( this ) ) ;
+	
+	// block until camera calibration parameters are valid before running derived class's c'tor
+	while( ( !this->cameraBottomNotFront && !this->undistorterFrontInit  )
+	    || (  this->cameraBottomNotFront && !this->undistorterBottomInit ) ) {
+		std::cout << "INFO: waiting for undistorter to be initialized..." << std::endl ;
+		ros::spinOnce() ;
+		boost::this_thread::sleep( boost::posix_time::milliseconds( 250 ) ) ;
+	}
+}
+DroneAppBase::~DroneAppBase() { this->stop() ; }
+
+// run the drone application, wait for it to be finished or stop it immediately
+void DroneAppBase::start( const unsigned int threads ) {
+	
+	// start ROS processing
+	this->connROS->start( threads ) ;
+	
+	// start watch dog
+	this->watchdogTimer.reset() ;
+	this->watchdogThread = boost::thread( &DroneAppBase::watchdogThreadFunc, this ) ;
+}
+void DroneAppBase::wait() {
+	
+	// wait for the watch dog to finish
+	if( this->watchdogThread.joinable() ) {
+		this->watchdogThread.join() ;
+	}
+	
+	// stop ROS processing
+	this->connROS->stop() ;
+}
+void DroneAppBase::stop() {
+	
+	// stop the watch dog immediately
+	if( this->watchdogThread.joinable() ) {
+		this->watchdogThread.interrupt() ;
+		this->watchdogThread.join() ;
+	}
+	
+	// stop ROS processing
+	this->connROS->stop() ;
+}
+
+// processing functions to be implemented in derived classes, dummy implementations to avoid warnings
+void DroneAppBase::processImageFront(  const cv_bridge::CvImage        imageFront  ) { (void)imageFront  ; }
+void DroneAppBase::processImageBottom( const cv_bridge::CvImage        imageBottom ) { (void)imageBottom ; }
+void DroneAppBase::processNavdata(     const ardrone_autonomy::Navdata navdata     ) { (void)navdata     ; }
+
+// callbacks for subscribed topics
+void DroneAppBase::callbackImageFront( const sensor_msgs::ImageConstPtr& imageFrontROSPtr ) {
+	
+	// buffer current poses
+	this->rotationImageFrontReal    = this->odoDrone.getRotation()    ;
+	this->translationImageFrontReal = this->odoDrone.getTranslation() ;
+	
+	// tell the watch dog we're not dead
+	this->watchdogTimer.tic() ;
+	
+	// if wrong camera, switch and return
+	if( this->cameraBottomNotFront ) {
+		std::cout << "INFO: switching to bottom camera" << std::endl ;
+		ardrone_autonomy::CamSelect camSelect ;
+		camSelect.request.channel = 1 ;
+		ROS_SERVICE_CALL( this->connROS->clntCamSelect.call( camSelect ) ) ;
+		return ;
+	}
+	
+	// convert from ROS message to "cv::Mat" and from RGB to BGR
+	cv_bridge::CvImagePtr imageFrontBridgePtr = cv_bridge::toCvCopy( imageFrontROSPtr, sensor_msgs::image_encodings::BGR8 ) ;
+	
+	// only if watch dog and corresponding undistorter are initialized...
+	if( this->watchdogRunning
+	 && this->undistorterFrontInit ) {
+		
+		// undistort the image
+		cv::Mat undistorted ;
+		this->undistorterFront.CPU( imageFrontBridgePtr->image, undistorted ) ;
+		
+		// buffer it
+		imageFrontBridgePtr->image = undistorted ;
+		const cv_bridge::CvImage imageFrontCached = this->imageFrontReal = *imageFrontBridgePtr ;
+		
+		// call derived class's processing method
+		this->processImageFront( imageFrontCached ) ;
+	}
+}
+void DroneAppBase::callbackImageBottom( const sensor_msgs::ImageConstPtr& imageBottomROSPtr ) {
+	
+	// buffer current poses
+	this->rotationImageBottomReal    = this->odoDrone.getRotation()    ;
+	this->translationImageBottomReal = this->odoDrone.getTranslation() ;
+	
+	// tell the watch dog we're not dead
+	this->watchdogTimer.tic() ;
+	
+	// if wrong camera, switch and return
+	if( !this->cameraBottomNotFront ) {
+		std::cout << "INFO: switching to front camera" << std::endl ;
+		ardrone_autonomy::CamSelect camSelect ;
+		camSelect.request.channel = 0 ;
+		ROS_SERVICE_CALL( this->connROS->clntCamSelect.call( camSelect ) ) ;
+		return ;
+	}
+	
+	// convert from ROS message to "cv::Mat" and from RGB to BGR
+	cv_bridge::CvImagePtr imageBottomBridgePtr = cv_bridge::toCvCopy( imageBottomROSPtr, sensor_msgs::image_encodings::BGR8 ) ;
+	
+	// only if watch dog and corresponding undistorter are initialized...
+	if( this->watchdogRunning
+	 && this->undistorterBottomInit ) {
+		
+		// undistort the image
+		cv::Mat undistorted ;
+		this->undistorterBottom.CPU( imageBottomBridgePtr->image, undistorted ) ;
+		
+		// buffer it
+		imageBottomBridgePtr->image = undistorted ;
+		const cv_bridge::CvImage imageBottomCached = this->imageBottomReal = *imageBottomBridgePtr ;
+		
+		// call derived class's processing method
+		this->processImageBottom( imageBottomCached ) ;
+	}
+}
+void DroneAppBase::callbackCameraInfo( const sensor_msgs::CameraInfoPtr& cameraInfoPtr ) {
+	
+	// tell the watch dog we're not dead
+	this->watchdogTimer.tic() ;
+	
+	// get active camera's running number
+	int camera ;
+	     if( cameraInfoPtr->header.frame_id == "ardrone_base_frontcam"  ) { camera = 0 ; }
+	else if( cameraInfoPtr->header.frame_id == "ardrone_base_bottomcam" ) { camera = 1 ; }
+	else { HAWAII_ERROR( "unknown camera" ) ; }
+	
+	// select corresponding undistorter
+	toast2::stereo::Undistorter& undistorter(     camera == 0 ? this->undistorterFront     : this->undistorterBottom     ) ;
+	bool&                        undistorterInit( camera == 0 ? this->undistorterFrontInit : this->undistorterBottomInit ) ;
+	
+	// directly return if the undistorter is already initialized
+	if( HAWAII_LIKELY( undistorterInit ) ) { return ; }
+	
+	// check camera parameters
+	HAWAII_ERROR_CONDITIONAL( cameraInfoPtr->K[0] <= 0.0
+	                       || cameraInfoPtr->K[2] <= 0.0
+	                       || cameraInfoPtr->K[4] <= 0.0
+	                       || cameraInfoPtr->K[5] <= 0.0,
+	                          "camera not yet calibrated" ) ;
+	HAWAII_ERROR_CONDITIONAL( cameraInfoPtr->D.size() != 0
+	                       && cameraInfoPtr->D.size() != 5,
+	                          "unsupported distortion model" ) ;
+	
+	// initialize undistorter
+	std::cout << "INFO: initializing " << ( camera == 0 ? "front" : "bottom" ) << " undistorter" << std::endl ;
+	if( !cameraInfoPtr->D.empty() ) {
+		undistorter.distortion(0) = cameraInfoPtr->D[0] ;
+		undistorter.distortion(1) = cameraInfoPtr->D[1] ;
+		undistorter.distortion(2) = cameraInfoPtr->D[2] ;
+		undistorter.distortion(3) = cameraInfoPtr->D[3] ;
+		undistorter.distortion(4) = cameraInfoPtr->D[4] ;
+	}
+	undistorter.cameraSrc(0,0) = cameraInfoPtr->K[0] ;
+	undistorter.cameraSrc(0,1) = cameraInfoPtr->K[1] ;
+	undistorter.cameraSrc(0,2) = cameraInfoPtr->K[2] ;
+	undistorter.cameraSrc(1,0) = cameraInfoPtr->K[3] ;
+	undistorter.cameraSrc(1,1) = cameraInfoPtr->K[4] ;
+	undistorter.cameraSrc(1,2) = cameraInfoPtr->K[5] ;
+	undistorter.cameraSrc(2,0) = cameraInfoPtr->K[6] ;
+	undistorter.cameraSrc(2,1) = cameraInfoPtr->K[7] ;
+	undistorter.cameraSrc(2,2) = cameraInfoPtr->K[8] ;
+	undistorter.sizeSrc.width  = cameraInfoPtr->width  ;
+	undistorter.sizeSrc.height = cameraInfoPtr->height ;
+	undistorter.equalizeFocalLengths = true ;
+	undistorter.update() ;
+	undistorterInit = true ;
+}
+void DroneAppBase::callbackNavdata( const ardrone_autonomy::NavdataPtr& navdataPtr ) {
+	
+	// update odometry based on on-board sensors
+	this->odoDroneReal.processNavdata( *navdataPtr ) ;
+	
+	// tell the watch dog we're not dead
+	this->watchdogTimer.tic() ;
+	
+	// if the battery SOC is below 20%, notify each time it decreases further
+	if( navdataPtr->batteryPercent !=  0.0f
+	 && navdataPtr->batteryPercent <= 20.0f
+	 && navdataPtr->batteryPercent <  this->batteryPercentPrev ) {
+		std::cout << "WARNING: drone's battery level at " << navdataPtr->batteryPercent << "%" << std::endl ;
+	}
+	this->batteryPercentPrev = navdataPtr->batteryPercent ;
+	
+	// only if watch dog is initialized...
+	if( this->watchdogRunning ) {
+		
+		// buffer this navigation data
+		const ardrone_autonomy::Navdata navdataCached = this->navdataReal = *navdataPtr ;
+		
+		// call derived class's processing method
+		this->processNavdata( navdataCached ) ;
+	}
+}
+
+// watch dog to play audio messages in case the drone's signal is lost/restored
+void DroneAppBase::watchdogThreadFunc() {
+	
+	// states for ramping manual movement commands up and down over time
+	KeyboardSmoother keyboardLinX,
+	                 keyboardLinY,
+	                 keyboardLinZ,
+	                 keyboardAngZ ;
+	
+	// WiFi signal state, start in "lost"
+	bool lost = true ;
+	
+	// initialize required modules of "libSDL"
+	HAWAII_ERROR_CONDITIONAL( SDL_Init( SDL_INIT_VIDEO
+	                                  | SDL_INIT_AUDIO
+	                                  | SDL_INIT_JOYSTICK ) != 0,
+	                          "SDL failed to initialize."        ) ;
+	
+	// open a window to display key mapping illustration and catch keystrokes while in focus
+	SDL_Surface* const imageKeyboardTemp = SDL_LoadBMP( "data/keyboard.bmp" ) ;
+	HAWAII_ERROR_CONDITIONAL( imageKeyboardTemp == nullptr,
+	                          "SDL failed to load image file." ) ;
+	SDL_Surface* screen = SDL_SetVideoMode( imageKeyboardTemp->w, imageKeyboardTemp->h, 0, SDL_DOUBLEBUF ) ;
+	HAWAII_ERROR_CONDITIONAL( screen == nullptr,
+	                          "SDL failed to set video mode." ) ;
+	SDL_Surface* const imageKeyboard = SDL_DisplayFormat( imageKeyboardTemp ) ;
+	HAWAII_ERROR_CONDITIONAL( imageKeyboard == nullptr,
+	                          "SDL failed to convert image to display format." ) ;
+	SDL_FreeSurface( imageKeyboardTemp ) ;
+	HAWAII_ERROR_CONDITIONAL( SDL_BlitSurface( imageKeyboard, nullptr, screen, nullptr ) != 0,
+	                          "SDL failed to blit image to screen."                           ) ;
+	HAWAII_ERROR_CONDITIONAL( SDL_Flip( screen ) != 0,
+	                          "SDL failed to flip screen buffers." ) ;
+	SDL_WM_SetCaption( "drone application", "drone application" ) ;
+	
+	// make keyboard key states available
+	this->keystatesReal = SDL_GetKeyState( nullptr ) ;
+	HAWAII_ERROR_CONDITIONAL( this->keystatesReal == nullptr,
+	                          "SDL failed to get key states" ) ;
+	
+	// make gamepad or joystick available
+	SDL_Joystick* gamepadHandle = nullptr ;
+	if( SDL_NumJoysticks() > 0 ) {
+		gamepadHandle = SDL_JoystickOpen( 0 ) ;
+		HAWAII_ERROR_CONDITIONAL( gamepadHandle == nullptr,
+		                          "SDL failed to access gamepad." ) ;
+/*
+		HAWAII_ERROR_CONDITIONAL( strcmp( SDL_JoystickName( 0 ), "Generic X-Box pad" ) != 0
+		                       || SDL_JoystickNumAxes(    gamepadHandle ) != 6
+		                       || SDL_JoystickNumBalls(   gamepadHandle ) != 0
+		                       || SDL_JoystickNumButtons( gamepadHandle ) != 11 // developer note: I only found eight.
+		                       || SDL_JoystickNumHats(    gamepadHandle ) != 1,
+		                          "Logitech F{3,5,7}10 or Microsoft Xbox gamepad in XInput mode required" ) ;
+*/
+	}
+	
+	// initialize audio, load voice announcements
+	HAWAII_ERROR_CONDITIONAL( Mix_OpenAudio( 44100, AUDIO_S16SYS, 2, 4096 ) != 0,
+	                          "failed to open SDL audio"                         ) ;
+	Mix_Chunk* const soundRestored = Mix_LoadWAV( "data/signalRestored.wav" ) ;
+	Mix_Chunk* const soundLost     = Mix_LoadWAV( "data/signalLost.wav"     ) ;
+	HAWAII_ERROR_CONDITIONAL( soundRestored == nullptr
+	                       || soundLost     == nullptr,
+	                          "failed to load sound file" ) ;
+	
+	// for catching a "boost::thread_interrupted"
+	try {
+		
+		// watch dog main loop
+		this->watchdogRunning = true ;
+		while( true ) {
+
+			// update keyboard key states
+			SDL_PumpEvents() ;
+
+			// update gamepad states, specifically handle analog triggers
+			if( gamepadHandle ) {
+				SDL_JoystickUpdate() ;
+				this->crossReal = SDL_JoystickGetHat( gamepadHandle, 0 ) ;
+				for( int i = 0 ; i < 8 ; ++i ) {
+					this->buttonsReal[ i ] = SDL_JoystickGetButton( gamepadHandle, i ) ;
+				}
+				normalizeStick(   SDL_JoystickGetAxis( gamepadHandle, 0 ), this->analogReal[ 0 ] ) ;
+				normalizeStick(   SDL_JoystickGetAxis( gamepadHandle, 1 ), this->analogReal[ 1 ] ) ;
+				normalizeTrigger( SDL_JoystickGetAxis( gamepadHandle, 2 ), this->analogReal[ 2 ] ) ;
+				normalizeStick(   SDL_JoystickGetAxis( gamepadHandle, 3 ), this->analogReal[ 3 ] ) ;
+				normalizeStick(   SDL_JoystickGetAxis( gamepadHandle, 4 ), this->analogReal[ 4 ] ) ;
+				normalizeTrigger( SDL_JoystickGetAxis( gamepadHandle, 5 ), this->analogReal[ 5 ] ) ;
+			}
+			
+			// derived class's input handling
+			this->processKeystrokes() ;
+			
+			// quit on [Esc] or [Ctrl]+[C]
+			if( this->keystates[ SDLK_ESCAPE ]
+			 || ( ( this->keystates[ SDLK_LCTRL ] || this->keystates[ SDLK_RCTRL ] ) && this->keystates[ SDLK_c ] ) ) {
+				std::cout << "INFO: shut down requested..." << std::endl ;
+				
+				// loop until landed
+				while( true ) {
+					
+					// exit loop only if landed
+					const auto state = this->navdata.state ;
+					if( state == 2 || state == 0 ) { break ; }
+					
+					// request landing and wait
+					std::cout << "INFO: shut down delayed for landing, please wait for one second..." << std::endl ;
+					this->connROS->publLand.publish( std_msgs::Empty() ) ;
+					boost::this_thread::sleep( boost::posix_time::milliseconds( 1000 ) ) ;
+				}
+				
+				// leave watch dog main loop
+				break ;
+			}
+			
+			// only send previously set commands if autonomous mode is engaged
+			DroneCommands commandsToSend ;
+			if( this->engaged ) {
+				commandsToSend = this->commands ;
+			}
+			
+			// dis-engage or engage?
+			     if( this->keystates[ SDLK_SPACE  ]
+			      || this->buttons[   buttonRed   ] ) { this->engagedReal = false ;
+			                                            this->commands.controllersIntegratorDisable() ;
+			                                            this->commands.controllersReset() ; 
+			                                            std::cout << "INFO: dis-engaged" << std::endl ; }
+			else if( this->keystates[ SDLK_b      ]
+			      || this->buttons[   buttonGreen ] ) { this->engagedReal = true ;
+			                                            this->commands.controllersIntegratorEnable() ;
+			                                            this->commands.controllersReset() ;
+			                                            std::cout << "INFO: engaged" << std::endl ;
+			                                            this->resetAtEngage() ; }
+			// land or take off?
+			     if( this->keystates[ SDLK_g      ]
+			      || this->buttons[   buttonBack  ] ) { commandsToSend.maneuver = DroneCommands::maneuverLand    ;
+			                                            std::cout << "INFO: landing requested..."  << std::endl ; }
+			else if( this->keystates[ SDLK_t      ]
+			      || this->buttons[   buttonStart ] ) { commandsToSend.maneuver = DroneCommands::maneuverTakeOff ;
+			                                            std::cout << "INFO: take off requested..." << std::endl ; }
+			
+			// also land if battery is empty, but still airborne
+			if( this->batteryPercentPrev >  0.0f
+			 && this->batteryPercentPrev < 10.0f
+			 && this->navdata.state != 0
+			 && this->navdata.state != 2 ) {
+				commandsToSend.maneuver = DroneCommands::maneuverLand ;
+				std::cout << "ERROR: battery almost empty - we're going down!" << std::endl ;
+			}
+			
+			// create a "continuous" values from keystrokes 
+			keyboardLinX( keystates[ SDLK_u ],                        keystates[ SDLK_j ] ) ; // forward or backward
+			keyboardLinY( keystates[ SDLK_h ],                        keystates[ SDLK_k ] ) ; // strafe left or right
+			keyboardLinZ( keystates[ SDLK_o ],                        keystates[ SDLK_l ] ) ; // up or down
+			keyboardAngZ( keystates[ SDLK_y ] || keystates[ SDLK_z ], keystates[ SDLK_i ] ) ; // turn left or right, also support German keyboard mapping
+			
+			// merge keyboard and gamepad, whose axes are all inverted
+			const double manualLinX = std::min( 1.0, std::max( -1.0, keyboardLinX - this->analog[ stickLeftVerti  ] ) ),
+			             manualLinY = std::min( 1.0, std::max( -1.0, keyboardLinY - this->analog[ stickLeftHoriz  ] ) ),
+			             manualLinZ = std::min( 1.0, std::max( -1.0, keyboardLinZ - this->analog[ stickRightVerti ] ) ),
+			             manualAngZ = std::min( 1.0, std::max( -1.0, keyboardAngZ - this->analog[ stickRightHoriz ] ) ) ;
+			
+			// prevent controller wind-up in next iteration
+			constexpr double thresholdAntiWindup = 0.02 ;
+			this->commands.controllerLinX.disableIntegrator |= abs( manualLinX ) > thresholdAntiWindup ;
+			this->commands.controllerLinY.disableIntegrator |= abs( manualLinY ) > thresholdAntiWindup ;
+			this->commands.controllerLinZ.disableIntegrator |= abs( manualLinZ ) > thresholdAntiWindup ;
+			this->commands.controllerAngZ.disableIntegrator |= abs( manualAngZ ) > thresholdAntiWindup ;
+			
+			// apply manual control to difference between automated control and the following actuator limits
+			constexpr double manualLimitLinX = 0.5,
+			                 manualLimitLinY = 0.5,
+			                 manualLimitLinZ = 1.0,
+			                 manualLimitAngZ = 1.0 ;
+			geometry_msgs::Twist& movement = commandsToSend.movement ;
+			if( manualLinX > 0.0 ) { if( movement.linear.x  <  manualLimitLinX ) { movement.linear.x  += (  manualLimitLinX - movement.linear.x  ) * manualLinX ; } }
+			else                   { if( movement.linear.x  > -manualLimitLinX ) { movement.linear.x  -= ( -manualLimitLinX - movement.linear.x  ) * manualLinX ; } }
+			if( manualLinY > 0.0 ) { if( movement.linear.y  <  manualLimitLinY ) { movement.linear.y  += (  manualLimitLinY - movement.linear.y  ) * manualLinY ; } }
+			else                   { if( movement.linear.y  > -manualLimitLinY ) { movement.linear.y  -= ( -manualLimitLinY - movement.linear.y  ) * manualLinY ; } }
+			if( manualLinZ > 0.0 ) { if( movement.linear.z  <  manualLimitLinZ ) { movement.linear.z  += (  manualLimitLinZ - movement.linear.z  ) * manualLinZ ; } }
+			else                   { if( movement.linear.z  > -manualLimitLinZ ) { movement.linear.z  -= ( -manualLimitLinZ - movement.linear.z  ) * manualLinZ ; } }
+			if( manualAngZ > 0.0 ) { if( movement.angular.z <  manualLimitAngZ ) { movement.angular.z += (  manualLimitAngZ - movement.angular.z ) * manualAngZ ; } }
+			else                   { if( movement.angular.z > -manualLimitAngZ ) { movement.angular.z -= ( -manualLimitAngZ - movement.angular.z ) * manualAngZ ; } }
+			
+			// send LED animation
+			if( commandsToSend.ledAnimation != DroneCommands::ledNone ) {
+				ardrone_autonomy::LedAnim ledAnim ;
+				ledAnim.request.type     = commandsToSend.ledAnimation ;
+				ledAnim.request.freq     = commandsToSend.ledFrequency ;
+				ledAnim.request.duration = commandsToSend.ledDuration  ;
+				ROS_SERVICE_CALL( this->connROS->clntLedAnim.call( ledAnim ) ) ;
+			}
+			
+			// send flight maneuvers
+			if( commandsToSend.maneuver != DroneCommands::maneuverNone ) {
+				
+				// Landing has 1st priority.
+				if( commandsToSend.maneuver == DroneCommands::maneuverLand ) {
+					std::cout << "INFO: landing sent" << std::endl ;
+					this->connROS->publLand.publish( std_msgs::Empty() ) ;
+				}
+				
+				// Taking off has 2nd priority.
+				else if( commandsToSend.maneuver == DroneCommands::maneuverTakeOff ) {
+					
+					// only take off if not flying already
+					if( this->navdata.state == stateDroneDefault
+					 || this->navdata.state == stateDroneLanded  ) {
+						
+						// loop because we can't detect in advance if a reset is needed
+						while( true ) {
+							
+							// abort if battery is too empty to start (limited at 20% by drone's firmware)
+							if( this->navdata.batteryPercent <= 20.0f ) {
+								commandsToSend.maneuver = DroneCommands::maneuverNone ;
+								std::cout << "ERROR: battery is too low to take off" << std::endl ;
+								break ;
+							}
+							
+							// perform IMU re-calibration and flat-trim, wait without alarming the watch dog
+							std::cout << "INFO: take off delayed for re-calibration, please wait for one second..." << std::endl ;
+							std_srvs::Empty srvEmpty ;
+							ROS_SERVICE_CALL( this->connROS->clntIMURecalib.call( srvEmpty ) ) ;
+							ROS_SERVICE_CALL( this->connROS->clntFlatTrim.call(   srvEmpty ) ) ;
+							boost::this_thread::sleep( boost::posix_time::milliseconds( 1000 ) ) ;
+							this->watchdogTimer.tic() ;
+							
+							// try to take off, wait without alarming the watch dog
+							std::cout << "INFO: take off sent, please wait for one second..."  << std::endl ;
+							this->connROS->publTakeOff.publish( std_msgs::Empty() ) ;
+							boost::this_thread::sleep( boost::posix_time::milliseconds( 1000 ) ) ;
+							this->watchdogTimer.tic() ;
+							
+							// reset controllers and derived instance's state
+							this->commands.controllersReset() ;
+							this->resetAtTakeOff() ;
+							
+							// exit loop on success
+							if( this->navdata.state != stateDroneDefault
+							 && this->navdata.state != stateDroneLanded  ) {
+								break ;
+							}
+							
+							// reset, wait without alarming the watch dog
+							std::cout << "INFO: take off requires reset, please wait for one second..." << std::endl ;
+							this->connROS->publReset.publish( std_msgs::Empty() ) ;
+							boost::this_thread::sleep( boost::posix_time::milliseconds( 1000 ) ) ;
+							this->watchdogTimer.tic() ;
+							
+						} // while "reset required?"
+						
+					} // if "not flying already?"
+					
+					// otherwise, print a message
+					else { std::cout << "INFO: take off NOT sent because drone is already flying" << std::endl ; }
+				}
+				
+				// Flight animations have 3rd priority.
+				else if( commandsToSend.maneuver >=  0
+						&& commandsToSend.maneuver <= 19 ) {
+					ardrone_autonomy::FlightAnim flightAnim ;
+					flightAnim.request.type     = commandsToSend.maneuver ;
+					flightAnim.request.duration = 0                 ;
+					ROS_SERVICE_CALL( this->connROS->clntFlightAnim.call( flightAnim ) ) ;
+				}
+			}
+			
+			// Regular flight control has 4th priority.
+			else {
+				
+				// switch to on-board stabilization (by setting all values to zero) if all commands are below a certain limit
+				constexpr double thresholdOnboardStabilization = 0.02 ;
+				if( fabs( commandsToSend.movement.linear.x  ) < thresholdOnboardStabilization
+				 && fabs( commandsToSend.movement.linear.y  ) < thresholdOnboardStabilization
+				 && fabs( commandsToSend.movement.linear.z  ) < thresholdOnboardStabilization
+				 && fabs( commandsToSend.movement.angular.z ) < thresholdOnboardStabilization ) {
+					commandsToSend.movement.linear.x  = 0.0 ;
+					commandsToSend.movement.linear.y  = 0.0 ;
+					commandsToSend.movement.linear.z  = 0.0 ;
+					commandsToSend.movement.angular.x = 0.0 ;
+					commandsToSend.movement.angular.y = 0.0 ;
+					commandsToSend.movement.angular.z = 0.0 ;
+				}
+				this->connROS->publMovement.publish( commandsToSend.movement ) ;
+			}
+			
+			// if previously lost but time between images short enough, change state and play sound
+			if( lost
+			 && this->watchdogTimer.isRunning()
+			 && this->watchdogTimer.toc() < 100.0 ) {
+				
+				// change state, print information and play
+				lost = false ;
+				std::cout << "INFO: WiFi signal restored" << std::endl ;
+				HAWAII_ERROR_CONDITIONAL( Mix_PlayChannel( -1, soundRestored, 0 ) < 0,
+				                          "failed to play sound file"                 ) ;
+			}
+				
+			// if previously connected but time between images too long, change state and play sound
+			if( !lost
+			 && this->watchdogTimer.isRunning()
+			 && this->watchdogTimer.toc() > 400.0 ) {
+				
+				// change state, print information and play
+				lost = true ;
+				std::cout << "WARNING: WiFi signal lost" << std::endl ;
+				HAWAII_ERROR_CONDITIONAL( Mix_PlayChannel( -1, soundLost, 0 ) < 0,
+				                          "failed to play sound file"             ) ;
+			}
+			
+			// loop at (a little less than) 100 Hz, allow interruption
+			boost::this_thread::sleep( boost::posix_time::milliseconds( 10 ) ) ;
+			
+		} // while "never return"
+		
+	// wait to let sounds finish playing, shut down SDL before returning
+	} catch( const boost::thread_interrupted& ) {}
+	std::cout << "INFO: shut down confirmed, please wait for one second..." << std::endl ;
+	boost::this_thread::sleep( boost::posix_time::milliseconds( 1000 ) ) ;
+	Mix_FreeChunk( soundRestored ) ;
+	Mix_FreeChunk( soundLost     ) ;
+	Mix_CloseAudio() ;
+	SDL_JoystickClose( gamepadHandle ) ;
+	SDL_FreeSurface( imageKeyboard ) ;
+	SDL_Quit() ;
+	
+} // method "watchdogFunc()"
+
+void DroneAppBase::setCommand(const Command& cm) {
+	if (cm == Command::TakeOff) {
+		printing("receive command TakeOff");
+<<<<<<< .mine
+		this->commands.maneuver = DroneCommands::maneuverTakeOff;
+
+	}
+=======
+		this->engagedReal = true ;
+		this->commands.maneuver = DroneCommands::maneuverTakeOff;
+		//this->keystates[ SDLK_t      ] = 255;
+	}
+>>>>>>> .r82
+	if (cm == Command::Landing) {this->commands.maneuver = DroneCommands::maneuverLand;}
+}
+
+// undo local defines
+#undef ROS_SERVICE_CALL

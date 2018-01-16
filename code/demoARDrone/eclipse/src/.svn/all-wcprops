@@ -1,0 +1,149 @@
+K 25
+svn:wc:ra_dav:version-url
+V 41
+/drone4u/!svn/ver/94/code/demoARDrone/src
+END
+appFollowLine.h
+K 25
+svn:wc:ra_dav:version-url
+V 58
+/drone4u/!svn/ver/101/code/demoARDrone/src/appFollowLine.h
+END
+appBase.h
+K 25
+svn:wc:ra_dav:version-url
+V 51
+/drone4u/!svn/ver/95/code/demoARDrone/src/appBase.h
+END
+controller.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 56
+/drone4u/!svn/ver/11/code/demoARDrone/src/controller.cpp
+END
+sparse3D.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 55
+/drone4u/!svn/ver/110/code/demoARDrone/src/sparse3D.cpp
+END
+main.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 50
+/drone4u/!svn/ver/97/code/demoARDrone/src/main.cpp
+END
+dense3D.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 53
+/drone4u/!svn/ver/36/code/demoARDrone/src/dense3D.cpp
+END
+controller.h
+K 25
+svn:wc:ra_dav:version-url
+V 54
+/drone4u/!svn/ver/11/code/demoARDrone/src/controller.h
+END
+dense3DOffline.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/drone4u/!svn/ver/38/code/demoARDrone/src/dense3DOffline.cpp
+END
+sparse3D.h
+K 25
+svn:wc:ra_dav:version-url
+V 52
+/drone4u/!svn/ver/17/code/demoARDrone/src/sparse3D.h
+END
+dense3D.h
+K 25
+svn:wc:ra_dav:version-url
+V 51
+/drone4u/!svn/ver/11/code/demoARDrone/src/dense3D.h
+END
+odometryDrone.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/drone4u/!svn/ver/102/code/demoARDrone/src/odometryDrone.cpp
+END
+navigator.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 55
+/drone4u/!svn/ver/11/code/demoARDrone/src/navigator.cpp
+END
+navigator.h
+K 25
+svn:wc:ra_dav:version-url
+V 53
+/drone4u/!svn/ver/24/code/demoARDrone/src/navigator.h
+END
+odometryDrone.h
+K 25
+svn:wc:ra_dav:version-url
+V 58
+/drone4u/!svn/ver/102/code/demoARDrone/src/odometryDrone.h
+END
+appDevel.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 54
+/drone4u/!svn/ver/38/code/demoARDrone/src/appDevel.cpp
+END
+commands.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 54
+/drone4u/!svn/ver/11/code/demoARDrone/src/commands.cpp
+END
+appFollowTag.h
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/drone4u/!svn/ver/102/code/demoARDrone/src/appFollowTag.h
+END
+appDevel.h
+K 25
+svn:wc:ra_dav:version-url
+V 52
+/drone4u/!svn/ver/38/code/demoARDrone/src/appDevel.h
+END
+commands.h
+K 25
+svn:wc:ra_dav:version-url
+V 52
+/drone4u/!svn/ver/11/code/demoARDrone/src/commands.h
+END
+sparse3D2.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 56
+/drone4u/!svn/ver/110/code/demoARDrone/src/sparse3D2.cpp
+END
+sample_code.txt
+K 25
+svn:wc:ra_dav:version-url
+V 58
+/drone4u/!svn/ver/101/code/demoARDrone/src/sample_code.txt
+END
+appFollowLine.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/drone4u/!svn/ver/11/code/demoARDrone/src/appFollowLine.cpp
+END
+appBase.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 53
+/drone4u/!svn/ver/95/code/demoARDrone/src/appBase.cpp
+END
+sparse3D2.h
+K 25
+svn:wc:ra_dav:version-url
+V 54
+/drone4u/!svn/ver/104/code/demoARDrone/src/sparse3D2.h
+END
