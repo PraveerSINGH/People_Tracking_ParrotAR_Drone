@@ -1,0 +1,816 @@
+/*
+ * drone_producer.cpp
+ *
+ *  Created on: Aug 20, 2013
+ *      Author: truongnt
+ */
+
+#include "drone_producer.h"
+#include "hawaii/common/helpers.h"
+#include <opencv2/imgproc/imgproc.hpp>
+#include <SDL/SDL_keysym.h>
+#include <SDL/SDL_joystick.h>
+
+/*
+#include <boost/filesystem/operations.hpp>
+#include <boost/filesystem/fstream.hpp>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <iostream>
+ */
+#include <unistd.h>
+#include <dirent.h>
+#include <sys/types.h> // for opendir(), readdir(), closedir()
+#include <sys/stat.h> // for stat()
+
+namespace producer_consumer_thread {
+
+AutoNavigator::AutoNavigator(): altitudeDelta(0)
+		{
+	// TODO Auto-generated constructor stub
+	this->state_ = AutoNavigatorState::stateInactive;
+
+}
+
+AutoNavigator::~AutoNavigator() {
+	// TODO Auto-generated destructor stub
+}
+
+void AutoNavigator::init(const cv::Vec3d      translationGlobal, const cv::Vec3d      rotationGlobal) {
+	//this->Turn(rotationGlobal, 0);
+
+	boost::lock_guard< boost::mutex > lock( mt_state_ ) ;
+	const double droneYaw = AutoNavigator::toDroneYaw(rotationGlobal);
+	droneYawTarget_ = droneYaw + 0;
+
+	this->translationPrevious_ = translationGlobal;
+	this->rotationPrevious_ = rotationGlobal;
+
+	this->state_ = AutoNavigatorState::stateInactive;
+}
+bool AutoNavigator::getCommands(       DroneCommands& commands,
+		const cv::Vec3d      rotationGlobal,
+		const cv::Vec3d      translationGlobal ) {
+	boost::lock_guard< boost::mutex > lock( mt_state_ ) ;
+	if ( this->state_ == AutoNavigatorState::stateRotating
+			){ //|| this->state_ == AutoNavigatorState::stateInactive) {
+		//printing("AutoNavigator - rotating");
+		// map angle difference to the interval [-180°,180°]
+		const double droneYaw = AutoNavigator::toDroneYaw(rotationGlobal);
+		double errorYaw = droneYawTarget_ - droneYaw ;
+		errorYaw -= 360.0 * ( errorYaw >   180.0 ) ;
+		errorYaw += 360.0 * ( errorYaw < - 180.0 ) ;
+
+		// closed-loop control of yaw rotation
+		if (fabs(errorYaw) < 10.0) {
+			commands.hover();
+			//this->state_ = AutoNavigatorState::stateInactive;
+			this->state_ = AutoNavigatorState::stateInactive;
+			//printing("back to state inactive");
+			//TO DO: it need to set the command into DISENGAGE,
+			//but right now I can't communicate between AutoNavigator and DroneAppBase
+		}
+		else {
+			commands.controlAngZ( AutoNavigator::toRadian(errorYaw));
+			// do nothing else except rotating
+			commands.movement.linear.x = 0.0f ;
+			commands.movement.linear.y = 0.0f ;
+			commands.movement.linear.z = 0.0f ;
+			commands.maneuver = DroneCommands::maneuverNone ;
+		}
+
+		const cv::Vec3d translDeltaGlobal = translationGlobal - this->translationPrevious_;
+		std::cout<<translDeltaGlobal(0)<<" "
+				<<translDeltaGlobal(1)<<" "
+				<<translDeltaGlobal(2)<<" "<<std::endl;
+//
+//		printing(utilities::NumberToString(translDeltaGlobal(0))
+//			+ utilities::NumberToString(translDeltaGlobal(1))
+//			+ utilities::NumberToString(translDeltaGlobal(2)));
+	}
+
+	else if ( this->state_ == AutoNavigatorState::stateMoving
+			|| this->state_ == AutoNavigatorState::stateInactive) {
+//printing("state moving...");
+		// closed-loop control of forward/backward and left/right motions based on visual odometry
+		double errorForward = 0.0,
+				errorLeft    = 0.0 ;
+
+		//need to store previous translation.
+		const cv::Vec3d translDeltaGlobal = translationGlobal - this->translationPrevious_;
+		const cv::Vec3d translDeltaLocal = OdometryDrone::rotateTranslation( translDeltaGlobal, rotationGlobal( 1 ) ) ;
+		errorForward = - translDeltaLocal( 2 ) ;
+		errorLeft    =   translDeltaLocal( 0 ) ;
+		commands.controlLinX( errorForward ) ;
+		commands.controlLinY( errorLeft    ) ;
+
+		// closed-loop control of altitude and yaw always based on on-board sensors
+		const double altitudeBefore = - this->translationPrevious_(1),
+				altitudeCurr   = -       translationGlobal(         1 ),
+				yawBefore      = - this->rotationPrevious_(2),
+				yawCurr        = -       rotationGlobal(            1 ) ;
+		//this->altitudeDelta =
+		double errorUp  = altitudeBefore - altitudeCurr + this->altitudeDelta,
+				errorYaw = yawBefore      - yawCurr                            ;
+		if( errorYaw >   CV_PI ) { errorYaw -= 2.0 * CV_PI ; }
+		if( errorYaw < - CV_PI ) { errorYaw += 2.0 * CV_PI ; }
+		commands.controlLinZ( errorUp  ) ;
+		commands.controlAngZ( errorYaw ) ;
+
+		// crank height control up if error is large
+#if 1
+		commands.controllerLinZ.disableIntegrator = false ;
+		if( 0.0     < this->altitudeDelta
+				&& errorUp > this->altitudeDelta * 0.25
+				&& commands.movement.linear.z <   0.75f ) {
+			commands.controllerLinZ.disableIntegrator = true ;
+			commands.movement.linear.z =    0.75f ;
+		}
+		if( 0.0     > this->altitudeDelta
+				&& errorUp < this->altitudeDelta * 0.25
+				&& commands.movement.linear.z > - 0.75f ) {
+			commands.controllerLinZ.disableIntegrator = true ;
+			commands.movement.linear.z =  - 0.75f ;
+		}
+#endif
+//
+//		// show the errors
+//		HAWAII_PRINT( errorForward ) ;
+//		HAWAII_PRINT( errorLeft    ) ;
+//		HAWAII_PRINT( errorUp      ) ;
+//		HAWAII_PRINT( errorYaw     ) ;
+//		std::cout << std::endl ; //*/
+
+		// suppress any specific flight maneuver
+		commands.maneuver = DroneCommands::maneuverNone ;
+
+		// check if height change has been completed
+		if( (fabs( errorForward ) < 0.20 * this->altitudeDelta ) // greater impact than others
+				&& fabs( errorLeft    ) < 0.20 * this->altitudeDelta
+				&& fabs( errorUp      ) < 0.20 * this->altitudeDelta
+				&& fabs( errorYaw     ) < 5.0 / 180.0 * CV_PI ) {
+			commands.hover();
+			//this->state_ = AutoNavigatorState::stateInactive;
+			printing("back to state inactive");
+			// change state
+			//this->timerHover.tic() ;
+			//std::cout << "INFO: dense 3D: changed state to HOVER AFTER height change" << std::endl ;
+		}
+	}
+	else {
+
+		commands.hover();
+	}
+
+	//printf( "errorYaw = %5.2f, target = %5.2f, current = %5.2f\n", errorYaw, droneYawTarget_, AutoNavigator::toDroneYaw(rotationGlobal));
+
+	//this->translationPrevious_ = translationGlobal;
+//	this->rotationPrevious_ = rotationGlobal;
+
+	//}
+	//	if ( this->state_ == AutoNavigatorState::stateInactive) {
+	//		//printing("AutoNavigator - state inactive")
+	//		//commands.controlAngZ( 0 ) ;
+	//		//set all the movement to zero and maneuverNone when there are nothing to do
+	//		//I still don't know why: after I set the error to Zero and put it into the commands,
+	//		//the Drone still turn in a slower speed!!! Except using commands.hover().
+	//		commands.hover();
+	//		printf( "current = %5.2f\n", AutoNavigator::toDroneYaw(rotationGlobal));
+	//
+	//	}
+	return ( this->state_ != AutoNavigatorState::stateInactive ) ;
+}
+
+DroneProducer::DroneProducer(int n, int TimeBetweenImages):DroneAppBase(false), Producer(n)
+//,mTimeBetweenImages(0, 0, 0, TimeBetweenImages)
+{
+	// TODO Auto-generated constructor stub
+	mTimeBetweenImages = boost::posix_time::milliseconds(TimeBetweenImages);
+	mSendImageLastTime = boost::posix_time::microsec_clock::local_time();
+	mSendImageDeltaTime = boost::posix_time::time_duration(0, 0, 0, 0);
+}
+
+DroneProducer::~DroneProducer() {
+	// TODO Auto-generated destructor stub
+
+}
+
+void DroneProducer::processImageFront( const cv_bridge::CvImage imageFront ) {
+	if (::getSystemState() != SystemState::activeState) {
+		return;
+	}
+	boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+	boost::posix_time::time_duration delta_time = current_time - mSendImageLastTime;
+	//	printing("debugging: "
+	//			+ utilities::NumberToString(mTimeBetweenImages.total_milliseconds()) + " "
+	//			+ utilities::NumberToString(delta_time.total_milliseconds()) + " "
+	//			+ utilities::NumberToString(mSendImageDeltaTime.total_milliseconds()) + " "
+	//			);
+	if (mSendImageDeltaTime + delta_time > mTimeBetweenImages) {
+		//		printing("send image when delta time = " + utilities::NumberToString((mSendImageDeltaTime + delta_time).total_milliseconds()));
+		mSendImageLastTime = current_time;
+		//mSendImageDeltaTime = 0;//mSendImageDeltaTime + delta_time - mTimeBetweenImages;
+
+
+		//std::cout<<"receive image front"<<std::endl;
+		// keep original image for visualization, create GPU-suitable copies in color and (slightly blurred) grayscale
+		cv::Mat visualization = imageFront.image ;
+		//
+		//		hawaii::AutoMat imageBGR, imageGray, imageGraySmooth ;
+		//		imageFront.image.copyTo( imageBGR.writeCPU( imageFront.image.size(), imageFront.image.type() ) ) ;
+		//		cv::cvtColor(      imageBGR, imageGray.writeCPU( imageBGR.size(), CV_8UC1 ), cv::COLOR_BGR2GRAY ) ; // TODO multi-core
+		//		//	cv::gpu::cvtColor( imageBGR, imageGray.writeGPU( imageBGR.size(), CV_8UC1 ), cv::COLOR_BGR2GRAY ) ; // TODO profile
+		//		cv::GaussianBlur(      imageGray, imageGraySmooth.writeCPU( imageBGR.size(), CV_8UC1 ), cv::Size( 3, 3 ), 0.0, 0.0 ) ; // TODO multi-core
+		//		//	cv::gpu::GaussianBlur( imageGray, imageGraySmooth.writeGPU( imageBGR.size(), CV_8UC1 ), cv::Size( 3, 3 ), 0.0, 0.0 ) ; // TODO profile
+
+		MessageData msg;
+		msg.mLapNo = this->mThreadNo;
+		msg.mImg = visualization.clone();
+		msg.mTimeStamp = boost::posix_time::microsec_clock::local_time();
+
+		this->setData(msg);
+
+		//boost::this_thread::sleep(boost::posix_time::milliseconds(1000/mMaximumFrameRate));
+
+		//	//write to file
+		//	//std::cout<<"current path: "<<boost::filesystem::current_path()<<endl;
+		//	boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+		//	boost::posix_time::time_duration diff = current_time - Glostart_time;
+		//
+		//	//std::cout<<diff.total_milliseconds()<<std::endl;
+		//
+		//	ostringstream ss;
+		//	ss <<GlostrSaveSimulationFolder<<"/"<<diff.total_milliseconds()<<".jpg";
+		//	std::cout<<ss.str()<<std::endl;
+		//	cv::imwrite(ss.str(), msg.mImg);
+
+	}
+	else {
+		//printing("NO send image when delta time = " + utilities::NumberToString((mSendImageDeltaTime + delta_time).total_milliseconds()));
+	}
+}
+
+void DroneProducer::processKeystrokes() {
+	//	printing("DroneProducer::processKeystrokes()");
+	//	if( this->keystates[ SDLK_ESCAPE ]) {
+	//		GloConnect.setCloseConnection(true);
+	//		MessageData msg = MessageData::createMessage(Command::CloseConnection);
+	//		this->setData(msg);
+	//		printing("stopping processKeystrokes");//: sent message close connection");
+	//	}
+}
+
+//--------------------------------------------------------------------------
+
+DroneProducer1::DroneProducer1(int n, int TimeBetweenImages):
+				DroneProducer(n, TimeBetweenImages),
+				sparse3D2( this->focalLengthFrontU,
+						this->principalPointFrontU,
+						this->principalPointFrontV ){
+	md_Stream1_ = NULL;
+	md_Stream2_ = NULL;
+
+	md_CurrentStream1_ = NULL;
+	md_CurrentStream2_ = NULL;
+
+	this->consumerThread_ = boost::thread( &DroneProducer1::consume, this ) ;
+}
+
+DroneProducer1::~DroneProducer1() {
+	if( this->consumerThread_.joinable() ) {
+		this->consumerThread_.join() ;
+	}
+}
+boost::posix_time::ptime Glostart_time = boost::posix_time::microsec_clock::local_time();
+void DroneProducer1::processImageFront( const cv_bridge::CvImage imageFront ) {
+	if (::getSystemState() != SystemState::activeState) {
+		return;
+	}
+	boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+	boost::posix_time::time_duration delta_time = current_time - mSendImageLastTime;
+	//	printing("debugging: "
+	//			+ utilities::NumberToString(mTimeBetweenImages.total_milliseconds()) + " "
+	//			+ utilities::NumberToString(delta_time.total_milliseconds()) + " "
+	//			+ utilities::NumberToString(mSendImageDeltaTime.total_milliseconds()) + " "
+	//			);
+	if (mSendImageDeltaTime + delta_time > mTimeBetweenImages) {
+		//		printing("send image when delta time = " + utilities::NumberToString((mSendImageDeltaTime + delta_time).total_milliseconds()));
+		mSendImageLastTime = current_time;
+		//mSendImageDeltaTime = 0;//mSendImageDeltaTime + delta_time - mTimeBetweenImages;
+
+
+		//std::cout<<"receive image front"<<std::endl;
+		// keep original image for visualization, create GPU-suitable copies in color and (slightly blurred) grayscale
+		cv::Mat visualization = imageFront.image ;
+		//
+		//		hawaii::AutoMat imageBGR, imageGray, imageGraySmooth ;
+		//		imageFront.image.copyTo( imageBGR.writeCPU( imageFront.image.size(), imageFront.image.type() ) ) ;
+		//		cv::cvtColor(      imageBGR, imageGray.writeCPU( imageBGR.size(), CV_8UC1 ), cv::COLOR_BGR2GRAY ) ; // TODO multi-core
+		//		//	cv::gpu::cvtColor( imageBGR, imageGray.writeGPU( imageBGR.size(), CV_8UC1 ), cv::COLOR_BGR2GRAY ) ; // TODO profile
+		//		cv::GaussianBlur(      imageGray, imageGraySmooth.writeCPU( imageBGR.size(), CV_8UC1 ), cv::Size( 3, 3 ), 0.0, 0.0 ) ; // TODO multi-core
+		//		//	cv::gpu::GaussianBlur( imageGray, imageGraySmooth.writeGPU( imageBGR.size(), CV_8UC1 ), cv::Size( 3, 3 ), 0.0, 0.0 ) ; // TODO profile
+
+		MessageData msg;
+		msg.mLapNo = this->mThreadNo;
+		msg.mImg = visualization.clone();
+		using namespace boost::posix_time;
+		using namespace boost::gregorian;
+		msg.mTimeStamp = boost::posix_time::microsec_clock::local_time();
+
+		this->setData(msg);
+
+		//boost::this_thread::sleep(boost::posix_time::milliseconds(1000/mMaximumFrameRate));
+
+		//write to file
+		//std::cout<<"current path: "<<boost::filesystem::current_path()<<endl;
+		boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+		boost::posix_time::time_duration diff = current_time - Glostart_time;
+
+		//std::cout<<diff.total_milliseconds()<<std::endl;
+
+//		ostringstream ss;
+//		ss <<GlostrSaveSimulationFolder<<"/"<<diff.total_milliseconds()<<".jpg";
+//		std::cout<<ss.str()<<std::endl;
+//		cv::imwrite(ss.str(), msg.mImg);
+
+		remoteNavigator_.getCommands(this->commands,
+				this->odoDrone.getRotation(),
+				this->odoDrone.getTranslation());
+	}
+	else {
+		//printing("NO send image when delta time = " + utilities::NumberToString((mSendImageDeltaTime + delta_time).total_milliseconds()));
+	}
+}
+void DroneProducer1::processKeystrokes() {
+	//	if( this->keystates[ SDLK_ESCAPE ]) {
+	//		GloConnect.setCloseConnection(true);
+	//		MessageData msg = MessageData::createMessage(Command::CloseConnection);
+	//		this->setData(msg);
+	//		printing("stopping processKeystrokes");//: sent message close connection");
+	//	}
+
+	MessageData msg;
+	Command cm = Command::NoCommand;
+
+	if( this->keystates[ 		SDLK_1 		]) {cm = Command::Escape		; printing("Remote Escape		");}
+	else if( this->keystates[ 	SDLK_2 		]) {cm = Command::TakeOff		; printing("Remote TakeOff		");}
+	else if( this->keystates[ 	SDLK_3		]) {cm = Command::Landing		; printing("Remote Landing		");}
+	else if( this->keystates[ 	SDLK_4 		]) {cm = Command::Engage		; printing("Remote Engage		");}
+	else if( this->keystates[ 	SDLK_5 		]) {cm = Command::DisEngage		; printing("Remote DisEngage	");}
+
+	else if( this->keystates[ 	SDLK_w 		]) {cm = Command::MoveForward	; printing("Remote MoveForward	");}
+	else if( this->keystates[ 	SDLK_s 		]) {cm = Command::MoveBackward	; printing("Remote MoveBackward	");}
+	else if( this->keystates[ 	SDLK_a 		]) {cm = Command::MoveLeft		; printing("Remote MoveLeft		");}
+	else if( this->keystates[ 	SDLK_d 		]) {cm = Command::MoveRight		; printing("Remote MoveRight	");}
+	else if( this->keystates[ 	SDLK_r 		]) {cm = Command::MoveUp		; printing("Remote MoveUp		");}
+	else if( this->keystates[ 	SDLK_f 		]) {cm = Command::MoveDown		; printing("Remote MoveDown		");}
+
+	else if( this->keystates[ 	SDLK_q 		]) {cm = Command::RotateLeft	; printing("Remote RotateLeft	");}
+	else if( this->keystates[ 	SDLK_e 		]) {cm = Command::RotateRight	; printing("Remote RotateLeft	");}
+
+	else if( this->keystates[ 	SDLK_b 		]) {
+		cv::Vec3d rotationGlobal = this->odoDrone.getRotation();
+		cv::Vec3d translationGlobal = this->odoDrone.getTranslation();
+		remoteNavigator_.init(translationGlobal, rotationGlobal);
+	}
+	else if( this->keystates[ 	SDLK_0 		]) {
+		printing("pressed number 0");
+		//cm = Command::AutoRotate	;
+		if (remoteNavigator_.checkState(AutoNavigatorState::stateInactive)) {
+			cv::Vec3d rotationGlobal = this->odoDrone.getRotation();
+			cv::Vec3d translationGlobal = this->odoDrone.getTranslation();
+			remoteNavigator_.Turn(translationGlobal, rotationGlobal, 90);
+			//remoteNavigator_.MoveUpDown(translationGlobal, rotationGlobal, 90);
+			printing("turn	");
+		}
+	}
+	else if( this->keystates[ 	SDLK_9 		]) {
+			printing("pressed number 9");
+			//cm = Command::AutoRotate	;
+			if (remoteNavigator_.checkState(AutoNavigatorState::stateInactive)) {
+				cv::Vec3d rotationGlobal = this->odoDrone.getRotation();
+				cv::Vec3d translationGlobal = this->odoDrone.getTranslation();
+				//remoteNavigator_.Turn(translationGlobal, rotationGlobal, 90);
+				remoteNavigator_.MoveUpDown(translationGlobal, rotationGlobal, 0.5);
+				printing("moving	");
+			}
+		}
+
+	if (cm != Command::NoCommand) {
+		msg = MessageData::createMessage(cm);
+		GloQueueCommand.push(msg);
+		//this->setCommand(cm);
+	}
+}
+
+void DroneProducer1::consume() {
+	printing("running DroneConsumer No " +utilities::NumberToString(mThreadNo));
+
+	//----------------------------------------------------------------------
+	//TO DO:
+	MessageData msg;
+	while(true) {
+		//printing("before get value");
+		this->getData(msg);
+		{
+			boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+			boost::posix_time::time_duration diff = current_time - msg.mTimeStamp;
+			if (diff.total_milliseconds() > 2500) {
+				//drop packet
+				printing("time for sending a packet from PC 2: " + utilities::NumberToString(diff.total_milliseconds()));
+				printing("drop old packet!");
+				continue;
+			}
+			if (msg.mLapNo == 2) {
+				printing("time for sending a packet from PC 2: " + utilities::NumberToString(diff.total_milliseconds()));
+			}
+		}
+		//		printing("get value successfully!");
+		//std::cout<<value.mImg.size().height<<" "<<value.mImg.size().width<<std::endl;
+		//		printing(std::string("is close connection")
+		//		+ std::string((value.isCommandMessage(Command::CloseConnection) ? "true": "false")));
+		if (msg.isCommandMessage(Command::CloseConnection)) {
+			//printing("DroneConsumer stopping getting message ");
+			cv::waitKey(5000);
+			break;
+		}
+
+		cv::imshow(std::string("Drone ") + utilities::NumberToString(msg.mLapNo), msg.mImg );
+		cv::waitKey(1);
+
+		if (msg.mLapNo == 2)
+		{
+			boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+			boost::posix_time::time_duration diff = current_time - msg.mTimeStamp;
+			//logging2("TIME: msg queue, send, queue, process", 2, diff.total_milliseconds());
+		}
+		else {
+			boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+			boost::posix_time::time_duration diff = current_time - msg.mTimeStamp;
+			//logging2("TIME: msg queue, process", 1, diff.total_milliseconds());
+		}
+
+		//synchronize two streams into 1
+		//condition: know that stream 1 is send more frames/s than stream 2.
+		if (md_Stream1_ == NULL || md_Stream2_ == NULL) {
+			//printing("md_Stream1_ == NULL || md_Stream2_ == NULL");
+			if (msg.mLapNo == 2) {
+				md_Stream2_ = new MessageData(msg);
+			}
+			else {
+				//Lapno = 1 --> add to waiting list
+				listWaitingSynchronizeStream_.push_back(msg);
+			}
+		}
+
+		//compare diff in order to find the best pair (the increasing of diff time)
+		if (md_Stream1_ == NULL && md_Stream2_ != NULL) {
+			//printing("md_Stream1_ == NULL && md_Stream2_ != NULL");
+			std::list<MessageData>::iterator iterator;
+			boost::posix_time::time_duration diff1;
+			boost::posix_time::time_duration diff2;
+			for (iterator = listWaitingSynchronizeStream_.begin(); iterator != listWaitingSynchronizeStream_.end(); ++iterator) {
+				//update diff 1 if current iterator in the begining
+				if (iterator == listWaitingSynchronizeStream_.begin()) {
+					if (md_Stream2_->mTimeStamp > iterator->mTimeStamp) {
+						diff1 = md_Stream2_->mTimeStamp - iterator->mTimeStamp;
+					}
+					else {
+						diff1 = -(md_Stream2_->mTimeStamp - iterator->mTimeStamp);
+					}
+				}
+				else {//update diff 2
+					if (md_Stream2_->mTimeStamp > iterator->mTimeStamp) {
+						diff2 = md_Stream2_->mTimeStamp - iterator->mTimeStamp;
+					}
+					else {
+						diff2 = -(md_Stream2_->mTimeStamp - iterator->mTimeStamp);
+					}
+				}
+
+				//std::cout<<"diff1"<<diff1<<"diff2"<<diff2<<std::endl;
+				if (iterator != listWaitingSynchronizeStream_.begin() && diff1 < diff2) {
+					//printing("iterator != listWaitingSynchronizeStream_.begin() && diff1 < diff2");
+					--iterator;// get the first pair
+					//std::cout<<"diff1"<< diff1<<std::endl;
+					md_Stream1_ = new MessageData((*iterator));
+					//remove used waiting list
+
+					std::list<MessageData>::iterator iterator_remover;
+					iterator_remover = listWaitingSynchronizeStream_.begin();
+					while (iterator_remover != iterator)
+					{
+						listWaitingSynchronizeStream_.erase(iterator_remover++);  // alternatively, i = items.erase(i);
+					}
+					break;
+				}
+
+				if (iterator != listWaitingSynchronizeStream_.begin()) {
+					diff1 = diff2;
+				}
+			}
+		}
+
+		if (md_Stream1_ != NULL && md_Stream2_ != NULL) {
+			//printing("md_Stream1_ != NULL && md_Stream2_ != NULL");
+			//add to current stream
+			md_CurrentStream1_ = md_Stream1_;
+			md_CurrentStream2_ = md_Stream2_;
+
+			md_Stream1_ = NULL;
+			md_Stream2_ = NULL;
+			//merge into 1 and show image
+
+			cv::imshow("stream 1", md_CurrentStream1_->mImg );
+			cv::waitKey(1);
+			cv::imshow("stream 2", md_CurrentStream2_->mImg );
+			cv::waitKey(1);
+			this->process2ImageStreams(md_CurrentStream1_, md_CurrentStream2_);
+
+		}
+	}
+	//----------------------------------------------------------------------
+	printing("stopping DroneConsumer No " +utilities::NumberToString(mThreadNo));
+}
+
+void DroneProducer1::process2ImageStreams(MessageData *stream1, MessageData *stream2) {
+	// keep original image for visualization, create GPU-suitable copies in color and (slightly blurred) grayscale
+	cv::Mat visualization = stream1->mImg;
+
+	//pre-processing for image stream 1
+	hawaii::AutoMat imageBGR1, imageGray1, imageGraySmooth1 ;
+	stream1->mImg.copyTo( imageBGR1.writeCPU( stream1->mImg.size(), stream1->mImg.type() ) ) ;
+	cv::cvtColor(      imageBGR1, imageGray1.writeCPU( imageBGR1.size(), CV_8UC1 ), cv::COLOR_BGR2GRAY ) ; // TODO multi-core
+	//	cv::gpu::cvtColor( imageBGR, imageGray.writeGPU( imageBGR.size(), CV_8UC1 ), cv::COLOR_BGR2GRAY ) ; // TODO profile
+	//cv::GaussianBlur(      imageGray1, imageGraySmooth1.writeCPU( imageBGR1.size(), CV_8UC1 ), cv::Size( 3, 3 ), 0.0, 0.0 ) ; // TODO multi-core
+	//	cv::gpu::GaussianBlur( imageGray, imageGraySmooth.writeGPU( imageBGR.size(), CV_8UC1 ), cv::Size( 3, 3 ), 0.0, 0.0 ) ; // TODO profile
+
+	//pre-processing for image stream 2
+	hawaii::AutoMat imageBGR2, imageGray2, imageGraySmooth2 ;
+	stream2->mImg.copyTo( imageBGR2.writeCPU( imageFront.image.size(), imageFront.image.type() ) ) ;
+	cv::cvtColor(      imageBGR2, imageGray2.writeCPU( imageBGR2.size(), CV_8UC1 ), cv::COLOR_BGR2GRAY ) ; // TODO multi-core
+	//	cv::gpu::cvtColor( imageBGR, imageGray.writeGPU( imageBGR.size(), CV_8UC1 ), cv::COLOR_BGR2GRAY ) ; // TODO profile
+	//cv::GaussianBlur(      imageGray2, imageGraySmooth2.writeCPU( imageBGR2.size(), CV_8UC1 ), cv::Size( 3, 3 ), 0.0, 0.0 ) ; // TODO multi-core
+	//	cv::gpu::GaussianBlur( imageGray, imageGraySmooth.writeGPU( imageBGR.size(), CV_8UC1 ), cv::Size( 3, 3 ), 0.0, 0.0 ) ; // TODO profile
+
+
+
+	//cv::imshow("asd", visualization);
+	// go through sub-modules with decreasing priority
+	bool commandsSet = false ;
+
+	// continue visual odometry and sparse 3D reconstruction no matter if commands are already set, but do "corkscrew"
+	// flight with lowest priority: see note at dense 3D
+	if( 1 ) {
+		if( this->sparse3D2.processImageFront( imageGray1,//imageGraySmooth1,
+				this->odoDrone.getRotation(),
+				this->odoDrone.getTranslation() ) ) {
+			//printing("first image for Sparse3D");
+		}
+		if( this->sparse3D2.processImageFront( imageGray2,//imageGraySmooth2,
+				this->odoDrone.getRotation(),
+				this->odoDrone.getTranslation() ) ) {
+			//printing("second image for Sparse3D");
+		}
+
+		this->sparse3D2.visualize( visualization ) ;
+		if( !commandsSet ) {
+			commandsSet = this->sparse3D2.getCommands( this->commands,
+					this->odoDrone.getTranslation() ) ;
+		}
+	}
+	//
+	//	// hover in place if no commands have been set for a given time
+	//	if( commandsSet ) { this->timerCommandsLastSet.tic() ; }
+	//	if( this->timerCommandsLastSet.toc() / 1000.0 > this->timeCommandsLastSetMax ) {
+	//		this->commands.reset() ;
+	//	}
+
+	// finally show the visualization image
+	if( 1
+			|| this->keystates[ SDLK_v ]
+			                    || this->buttons[ buttonBlue ] ) {
+		HAWAII_IMSHOW( visualization ) ;
+	}
+	cv::waitKey( 1 ) ;
+}
+
+//--------------------------------------------------------------------------
+
+DroneProducer2::DroneProducer2(int n, int TimeBetweenImages):
+				DroneProducer(n, TimeBetweenImages) {
+	remoteNavigator_.setState(AutoNavigatorState::stateInactive);
+}
+
+DroneProducer2::~DroneProducer2() { }
+
+void DroneProducer2::processKeystrokes() {
+	//	if( this->keystates[ SDLK_ESCAPE ]) {
+	//		GloConnect.setCloseConnection(true);
+	//		MessageData msg = MessageData::createMessage(Command::CloseConnection);
+	//		this->setData(msg);
+	//		printing("stopping processKeystrokes");//: sent message close connection");
+	//	}
+
+	MessageData msg;
+	if (GloQueueCommand.try_pop(msg)) {
+		//printing("get a command");
+
+		boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+		boost::posix_time::time_duration diff = current_time - msg.mTimeStamp;
+		//if (diff.total_milliseconds() > 2)
+		//{
+			//drop packet
+			printing("time for sending a command from PC 1: " + utilities::NumberToString(diff.total_milliseconds()));
+			//printing("drop old packet!");
+			//return;
+		//}
+
+		this->setCommand(msg.mCommand);
+
+		if( msg.isCommandMessage(Command::TakeOff)) {
+			//trigger takeoff
+			printing("Remote TakeOff");
+
+		}
+		else if( msg.isCommandMessage(Command::Landing)) {
+			//trigger landing
+			printing("Remote Landing");
+		}
+		else if( msg.isCommandMessage(Command::MoveForward)) {
+			//trigger move forward
+			printing("Remote MoveForward");
+		}
+
+		//engaged - mode
+		else if( msg.isCommandMessage(Command::Engage)) {
+			cv::Vec3d rotationGlobal = this->odoDrone.getRotation();
+			cv::Vec3d translationGlobal = this->odoDrone.getTranslation();
+			remoteNavigator_.init(translationGlobal, rotationGlobal);
+		}
+		else if( msg.isCommandMessage(Command::AutoRotate)) {
+			printing("Remote AutoRotate");
+			if (remoteNavigator_.checkState(AutoNavigatorState::stateInactive)) {
+				cv::Vec3d rotationGlobal = this->odoDrone.getRotation();
+				cv::Vec3d translationGlobal = this->odoDrone.getTranslation();
+				remoteNavigator_.Turn(translationGlobal, rotationGlobal, 90);
+				printing("rotating	");
+			}
+		}
+	}
+
+	remoteNavigator_.getCommands(this->commands,
+			this->odoDrone.getRotation(),
+			this->odoDrone.getTranslation());
+}
+
+//--------------------------------------------------------------------------
+//DroneProducerServer
+DroneProducerServer::DroneProducerServer(int n,
+		const std::string& port,
+		const std::string& hostLap2, const string& portLap2):
+		Producer(n) {//, mConnect(port, hostLap2, portLap2) {
+	// TODO Auto-generated constructor stub
+	//mConnect.mstate = ConnectionManagerState::init;
+	this->mportSrc = port;
+	this->mportDst = portLap2;
+	this->mhostDst = hostLap2;
+
+	//GloConnect = Connection_Manager(port, hostLap2, portLap2);
+	printing(mportSrc + mhostDst + mportDst);
+}
+
+DroneProducerServer::~DroneProducerServer() {
+	// TODO Auto-generated destructor stub
+}
+
+void DroneProducerServer::operator()() {
+	try {
+		//GloConnect.initServerState();
+
+		boost::asio::io_service io_service;
+		//-------------------
+		server s(io_service, utilities::StringToNumber(this->mportSrc), 1);
+		client1 c(io_service, this->mhostDst, this->mportDst);
+		//-------------------
+		boost::thread t_client1 = boost::thread(&client1::process_sender, boost::ref(c) ) ;
+		//-------------------
+		io_service.run();
+		t_client1.join();
+
+
+		//
+		//		boost::thread* server_side_sender;
+		//		boost::ExtendedThread::runThread(std::string("runSender1"),
+		//				server_side_sender,
+		//				&Connection_Manager::runSender, &GloConnect
+		//				,1
+		//				//, //no argument
+		//		);
+		//
+		//		boost::thread* server_side_receiver;
+		//		boost::ExtendedThread::runThread(std::string("runReceiver1"),
+		//				server_side_receiver,
+		//				//&Connection_Manager::runServerSideReceiver, &GloConnect
+		//				&Connection_Manager::runReceiver, &GloConnect
+		//				,1
+		//				//, //no argument
+		//		);
+		//
+		//		boost::thread_group tg;
+		//		tg.add_thread(server_side_sender);
+		//		tg.add_thread(server_side_receiver);
+		//		tg.join_all();
+		//--------------------------------------------------------------------------------------------
+		//
+		//	boost::shared_ptr<boost::thread> server_side_sender;
+		//	boost::ExtendedThread::runThread0(std::string("runServerSideSender"),
+		//			server_side_sender,
+		//			boost::mem_fn(&Connection_Manager::runServerSideSender), &GloConnect
+		//			//, //no argument
+		//	);
+		//
+		//	boost::shared_ptr<boost::thread> server_side_receiver;
+		//	boost::ExtendedThread::runThread0(std::string("runServerSideReceiver"),
+		//			server_side_receiver,
+		//			boost::mem_fn(&Connection_Manager::runServerSideReceiver), &GloConnect
+		//			//, //no argument
+		//	);
+		//
+		//	boost::thread_group tg;
+		//	tg.add_thread(server_side_sender.get());
+		//	tg.add_thread(server_side_receiver.get());
+		//	tg.join_all();
+
+	} catch (std::exception& e)
+	{
+		printing("[ERROR] DroneProducerServer::operator (): " + std::string(e.what()));
+	}
+}
+
+//---------------------------------------------------------------------------------------
+//SimulateDroneProducer
+SimulateDroneProducer::SimulateDroneProducer(int n):Producer(n) {
+	mTimeBetweenImages = boost::posix_time::milliseconds(500);
+	mSendImageLastTime = boost::posix_time::microsec_clock::local_time();
+	mSendImageDeltaTime = boost::posix_time::time_duration(0, 0, 0, 0);
+}
+
+SimulateDroneProducer::~SimulateDroneProducer() {
+	// TODO Auto-generated destructor stub
+}
+
+void SimulateDroneProducer::operator ()() {
+	MessageData msg;
+	//http://stackoverflow.com/questions/3554120/open-directory-using-c
+	struct dirent *pDirent;
+	DIR *pDir = opendir (GlostrSaveSimulationFolder.c_str());
+	if (pDir == NULL) {
+		std::cout<<"Cannot open directory "<<GlostrSaveSimulationFolder<<std::endl;
+		return;
+	}
+	while (true) {
+		if (::getSystemState() != SystemState::activeState) {
+			continue;
+		}
+
+		while ((pDirent = readdir(pDir)) != NULL) {
+			while (true) {
+				boost::posix_time::ptime current_time = boost::posix_time::microsec_clock::local_time();
+				boost::posix_time::time_duration delta_time = current_time - mSendImageLastTime;
+				if (mSendImageDeltaTime + delta_time > mTimeBetweenImages) {
+					//		printing("send image when delta time = " + utilities::NumberToString((mSendImageDeltaTime + delta_time).total_milliseconds()));
+					mSendImageLastTime = current_time;
+
+					if (strcmp(pDirent->d_name, "..")!= 0 &&  strcmp(pDirent->d_name, ".")!= 0
+							&&  strcmp(pDirent->d_name, ".svn")!= 0) {
+						printing(pDirent->d_name);
+
+						msg.mCommand = Command::NoCommand;
+						msg.mLapNo = this->mThreadNo;
+						msg.mImg = cv::imread(GlostrSaveSimulationFolder + "/" + string(pDirent->d_name), 1);
+						msg.mTimeStamp = boost::posix_time::microsec_clock::local_time();
+
+						this->setData(msg);
+
+					}
+
+					break;
+				}
+				boost::this_thread::sleep(boost::posix_time::milliseconds(50));
+			}
+		}
+		closedir (pDir);
+
+		if (this->mThreadNo == 2) {
+			//temporaly let lap 2 close connection
+			msg = MessageData::createMessage(Command::CloseConnection);
+			this->setData(msg);
+		}
+		break;
+	}
+}
+
+} /* namespace producer_thread */
+
