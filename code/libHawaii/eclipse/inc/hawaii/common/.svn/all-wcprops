@@ -1,0 +1,71 @@
+K 25
+svn:wc:ra_dav:version-url
+V 53
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common
+END
+tracker.h
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/tracker.h
+END
+sync.h
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/sync.h
+END
+hardware.h
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/hardware.h
+END
+timer.h
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/timer.h
+END
+partitionize.h
+K 25
+svn:wc:ra_dav:version-url
+V 68
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/partitionize.h
+END
+helpers.h
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/helpers.h
+END
+types.h
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/types.h
+END
+optimization.h
+K 25
+svn:wc:ra_dav:version-url
+V 68
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/optimization.h
+END
+error.h
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/error.h
+END
+minMax.h
+K 25
+svn:wc:ra_dav:version-url
+V 62
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/minMax.h
+END
+ostream.h
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/common/ostream.h
+END

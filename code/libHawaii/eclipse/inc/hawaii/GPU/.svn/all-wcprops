@@ -1,0 +1,53 @@
+K 25
+svn:wc:ra_dav:version-url
+V 50
+/drone4u/!svn/ver/12/code/libHawaii/inc/hawaii/GPU
+END
+nvccFixC++11.h
+K 25
+svn:wc:ra_dav:version-url
+V 65
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/GPU/nvccFixC++11.h
+END
+CUDA.h
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/drone4u/!svn/ver/12/code/libHawaii/inc/hawaii/GPU/CUDA.h
+END
+nvccFixHeaderBelow.h
+K 25
+svn:wc:ra_dav:version-url
+V 71
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/GPU/nvccFixHeaderBelow.h
+END
+nvccFixHeaderAbove.h
+K 25
+svn:wc:ra_dav:version-url
+V 71
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/GPU/nvccFixHeaderAbove.h
+END
+nvccRequire.h
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/GPU/nvccRequire.h
+END
+pool.h
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/GPU/pool.h
+END
+autoMat.h
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/GPU/autoMat.h
+END
+nvccProhibit.h
+K 25
+svn:wc:ra_dav:version-url
+V 65
+/drone4u/!svn/ver/11/code/libHawaii/inc/hawaii/GPU/nvccProhibit.h
+END

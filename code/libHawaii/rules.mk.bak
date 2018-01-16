@@ -1,0 +1,353 @@
+# Copyright (C) 2013 by FZI Forschungszentrum Informatik am Karlsruher Institut fuer Technologie
+# 
+# Author: Benjamin Ranft (benjamin.ranft@web.de)
+# 
+# This file is part of libHawaii.
+# 
+# libHawaii is free software: you can redistribute it and/or modify it under the terms of the GNU General Public 
+# License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later 
+# version.
+# 
+# libHawaii is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied 
+# warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License along with libHawaii. If not, see 
+# <http://www.gnu.org/licenses/>.
+
+
+# Overview
+# ========
+# This is the central file containing the actual build rules for all projects using "libHawaii".
+
+
+# Compiler options
+# ================
+# Different options can be used for:
+# - CPU code within .cpp files
+# - CPU code within .cu files
+# - GPU code within .cu files
+
+# select compilers: GCC 4.6, 4.7 and 4.8 are supported
+# Note: CUDA may require an older version of GCC for CPU code within .cu files.
+CXX  := g++
+CUXX := g++-4.6
+CU   := nvcc
+
+# set compiler-dependent options
+CXXFLAGS_ALL_46 += -Doverride= -Dfinal=
+CXXFLAGS_DBG_46 += -O0
+CXXFLAGS_DBG_47 += -O0
+CXXFLAGS_DBG_48 += -Og
+CXXFLAGS_NONVCC_ALL_46 += -std=c++0x # remove "NONVCC_" once CUDA supports C++11
+CXXFLAGS_NONVCC_ALL_47 += -std=c++11 # "
+CXXFLAGS_NONVCC_ALL_48 += -std=c++11 # "
+CXX_VER  := $(shell $(CXX)  -dumpversion | cut -c '1 3' )
+CUXX_VER := $(shell $(CUXX) -dumpversion | cut -c '1 3' )
+CXXFLAGS_NONVCC_ALL += $(CXXFLAGS_ALL_$(CXX_VER)) $(CXXFLAGS_NONVCC_ALL_$(CXX_VER))
+CXXFLAGS_NONVCC_DBG += $(CXXFLAGS_DBG_$(CXX_VER)) $(CXXFLAGS_NONVCC_DBG_$(CXX_VER))
+CXXFLAGS_NONVCC_PRF += $(CXXFLAGS_PRF_$(CXX_VER)) $(CXXFLAGS_NONVCC_PRF_$(CXX_VER))
+CXXFLAGS_NONVCC_REL += $(CXXFLAGS_REL_$(CXX_VER)) $(CXXFLAGS_NONVCC_REL_$(CXX_VER))
+CXXFLAGS_NVCC_ALL   += $(CXXFLAGS_ALL_$(CUXX_VER)) $(CXXFLAGS_NVCC_ALL_$(CUXX_VER))
+CXXFLAGS_NVCC_DBG   += $(CXXFLAGS_DBG_$(CUXX_VER)) $(CXXFLAGS_NVCC_DBG_$(CUXX_VER))
+CXXFLAGS_NVCC_PRF   += $(CXXFLAGS_PRF_$(CUXX_VER)) $(CXXFLAGS_NVCC_PRF_$(CUXX_VER))
+CXXFLAGS_NVCC_REL   += $(CXXFLAGS_REL_$(CUXX_VER)) $(CXXFLAGS_NVCC_REL_$(CUXX_VER))
+
+# flags for any CPU code, both outside of and within .cu-files
+CXXFLAGS_ALL += -DHAWAII_GCC
+CXXFLAGS_DBG += -DHAWAII_DBG -DDEBUG=DEBUG
+CXXFLAGS_PRF += -DHAWAII_PRF -DNDEBUG
+CXXFLAGS_REL += -DHAWAII_REL -DNDEBUG
+CXXFLAGS_ALL += -march=native -fabi-version=0
+CXXFLAGS_DBG += -g
+CXXFLAGS_PRF += -pg
+CXXFLAGS_PRF += -O3
+CXXFLAGS_REL += -O3
+CXXFLAGS_DBG += -Wno-unknown-pragmas # prevent warnings about "#pragma omp ..."
+CXXFLAGS_PRF += -fopenmp
+CXXFLAGS_REL += -fopenmp
+CXXFLAGS_ALL += -Wall -Wextra
+CXXFLAGS_PRF += -ftree-vectorizer-verbose=0 # 0 (no output) to 9 (all information)
+CXXFLAGS_REL += -ftree-vectorizer-verbose=0 # "
+
+# flags only for CPU code outside of .cu-files
+CXXFLAGS_NONVCC_ALL += 
+CXXFLAGS_NONVCC_DBG += 
+CXXFLAGS_NONVCC_PRF += 
+CXXFLAGS_NONVCC_REL += 
+
+# flags only for CPU code within .cu-files
+CXXFLAGS_NVCC_ALL += -Dnullptr=0
+CXXFLAGS_NVCC_DBG += 
+CXXFLAGS_NVCC_PRF += 
+CXXFLAGS_NVCC_REL += 
+
+# NVCC specific flags
+# Note: uncomment only the compute capabilities supported by your system for faster compilation.
+CUFLAGS_ALL += -gencode=arch=compute_35,code=sm_35
+CUFLAGS_ALL += -gencode=arch=compute_30,code=sm_30
+CUFLAGS_ALL += -gencode=arch=compute_20,code=sm_21
+CUFLAGS_ALL += -gencode=arch=compute_20,code=sm_20
+#CUFLAGS_ALL += -gencode=arch=compute_13,code=sm_13
+#CUFLAGS_ALL += -gencode=arch=compute_12,code=sm_12
+#CUFLAGS_ALL += -gencode=arch=compute_11,code=sm_11
+#CUFLAGS_ALL += -gencode=arch=compute_10,code=sm_10
+CUFLAGS_DBG += -DHAWAII_DBG -DDEBUG=DEBUG
+CUFLAGS_PRF += -DHAWAII_PRF -DNDEBUG
+CUFLAGS_REL += -DHAWAII_REL -DNDEBUG
+CUFLAGS_DBG += -G -lineinfo
+CUFLAGS_PRF +=    -lineinfo #--ptxas-options=-v
+CUFLAGS_PRF += -O3 -use_fast_math
+CUFLAGS_REL += -O3 -use_fast_math
+
+# linker flags
+LDFLAGS_ALL += 
+LDFLAGS_DBG += 
+LDFLAGS_PRF += -fopenmp
+LDFLAGS_REL += -fopenmp
+
+
+# Build preparations
+# ==================
+# user note: You really shouldn't need to change anything beyond this point.
+
+# print build commands and results by setting empty prefix and output target instead of "@" and ">/dev/null"
+VERBOSE ?= 0
+ifeq ($(VERBOSE),0)
+   VERBOSE_DISPLAY := @
+   VERBOSE_DEVNULL := >/dev/null
+else
+   VERBOSE_DISPLAY := 
+   VERBOSE_DEVNULL := 
+endif
+# do the same as above for dependency generation
+VERBOSE_DEP ?= 0
+ifeq ($(VERBOSE_DEP),0)
+	VERBOSE_DEP_DISPLAY := @
+	VERBOSE_DEP_DEVNULL := >/dev/null
+else
+   VERBOSE_DEP_DISPLAY := 
+   VERBOSE_DEP_DEVNULL := 
+endif
+
+# collect list of source files to be compiled
+SRC_DIR := src
+SOURCES := $(shell find $(SRC_DIR) -name *.cpp)
+ifneq ($(CUDA_USE),0)
+   SOURCES += $(shell find $(SRC_DIR) -name *.cu)
+endif
+SOURCES := $(strip $(SOURCES))
+
+# generate object and dependency file lists for each build mode
+OBJ_DIR := obj
+OBJS_DBG := $(strip $(subst $(SRC_DIR),$(OBJ_DIR)/dbg,$(subst .cu,.cu.o,$(subst .cpp,.cpp.o,$(SOURCES)))))
+OBJS_PRF := $(strip $(subst $(SRC_DIR),$(OBJ_DIR)/prf,$(subst .cu,.cu.o,$(subst .cpp,.cpp.o,$(SOURCES)))))
+OBJS_REL := $(strip $(subst $(SRC_DIR),$(OBJ_DIR)/rel,$(subst .cu,.cu.o,$(subst .cpp,.cpp.o,$(SOURCES)))))
+DEPS_DBG := $(OBJS_DBG:.o=.d)
+DEPS_PRF := $(OBJS_PRF:.o=.d)
+DEPS_REL := $(OBJS_REL:.o=.d)
+
+# set compiler and flags for .cpp- and .cu-files
+CUXXFLAGS_ALL := $(CXXFLAGS_ALL) $(CXXFLAGS_NVCC_ALL)
+CUXXFLAGS_DBG := $(CXXFLAGS_DBG) $(CXXFLAGS_NVCC_DBG)
+CUXXFLAGS_PRF := $(CXXFLAGS_PRF) $(CXXFLAGS_NVCC_PRF)
+CUXXFLAGS_REL := $(CXXFLAGS_REL) $(CXXFLAGS_NVCC_REL)
+CXXFLAGS_ALL  := $(CXXFLAGS_ALL) $(CXXFLAGS_NONVCC_ALL)
+CXXFLAGS_DBG  := $(CXXFLAGS_DBG) $(CXXFLAGS_NONVCC_DBG)
+CXXFLAGS_PRF  := $(CXXFLAGS_PRF) $(CXXFLAGS_NONVCC_PRF)
+CXXFLAGS_REL  := $(CXXFLAGS_REL) $(CXXFLAGS_NONVCC_REL)
+CUFLAGS_ALL   += $(DEFS)
+CXXFLAGS_ALL  += $(DEFS)
+CUXXFLAGS_ALL += $(DEFS)
+
+# always include local "inc" and "src" directory
+INC_DIRS += -Iinc
+INC_DIRS += -Isrc
+
+# select architecture-dependent parameters by number of bits for "long" type
+LONG_BITS := $(shell getconf LONG_BIT)
+ifeq ($(LONG_BITS),64)
+   LIB_DIRS_ALL := $(LIB_DIRS_ALL) $(LIB_DIRS_A64)
+   LIB_DIRS_DBG := $(LIB_DIRS_DBG) $(LIB_DIRS_A64_DBG)
+   LIB_DIRS_PRF := $(LIB_DIRS_PRF) $(LIB_DIRS_A64_PRF)
+   LIB_DIRS_REL := $(LIB_DIRS_REL) $(LIB_DIRS_A64_REL)
+   LIBS_ALL := $(LIBS_ALL) $(LIBS_A64)
+   LIBS_DBG := $(LIBS_DBG) $(LIBS_A64_DBG)
+   LIBS_PRF := $(LIBS_PRF) $(LIBS_A64_PRF)
+   LIBS_REL := $(LIBS_REL) $(LIBS_A64_REL)
+else
+   LIB_DIRS_ALL := $(LIB_DIRS_ALL) $(LIB_DIRS_X86)
+   LIB_DIRS_DBG := $(LIB_DIRS_DBG) $(LIB_DIRS_X86_DBG)
+   LIB_DIRS_PRF := $(LIB_DIRS_PRF) $(LIB_DIRS_X86_PRF)
+   LIB_DIRS_REL := $(LIB_DIRS_REL) $(LIB_DIRS_X86_REL)
+   LIBS_ALL := $(LIBS_ALL) $(LIBS_X86)
+   LIBS_DBG := $(LIBS_DBG) $(LIBS_X86_DBG)
+   LIBS_PRF := $(LIBS_PRF) $(LIBS_X86_PRF)
+   LIBS_REL := $(LIBS_REL) $(LIBS_X86_REL)
+endif
+
+# explicitly prefer "/usr/local/lib" to "/usr/lib"
+LIB_DIRS_ALL := -L/usr/local/lib $(LIB_DIRS_ALL)
+
+# construct full artifact name and configure linking
+ifeq ($(ART_TYPE),0) # executable
+   ART_PFX     := 
+   ART_EXT     := 
+   ART_DIR     := bin
+   LINK        := $(CXX) -o
+else ifeq ($(ART_TYPE),1) # static library
+   ART_PFX      := lib
+   ART_EXT      := .a
+   ART_DIR      := lib
+   LINK         := /usr/bin/ar -rcs
+   LDFLAGS_ALL  := # must be emptied
+   LDFLAGS_DBG  := # "
+   LDFLAGS_PRF  := # "
+   LDFLAGS_REL  := # "
+   LIB_DIRS_ALL := # "
+   LIB_DIRS_DBG := # "
+   LIB_DIRS_PRF := # "
+   LIB_DIRS_REL := # "
+   LIBS_ALL     := # "
+   LIBS_DBG     := # "
+   LIBS_PRF     := # "
+   LIBS_REL     := # "
+else ifeq ($(ART_TYPE),2) # shared library
+   ART_PFX       := lib
+   ART_EXT       := .so
+   ART_DIR       := lib
+   LINK          := $(CXX) -o 
+   LDFLAGS_ALL   += -fPIC -shared
+   CXXFLAGS_ALL  += -fPIC
+   CUXXFLAGS_ALL += -fPIC
+endif
+ART_FULL_DBG := $(subst " ","",$(ART_PFX)$(ART_NAME_DBG)$(ART_EXT))
+ART_FULL_PRF := $(subst " ","",$(ART_PFX)$(ART_NAME_PRF)$(ART_EXT))
+ART_FULL_REL := $(subst " ","",$(ART_PFX)$(ART_NAME_REL)$(ART_EXT))
+
+
+# Build rules
+# ===========
+# finally...
+
+# default rule to build all modes
+all: dbg prf rel
+
+# include dependencies found by compiler
+-include $(DEPS_DBG)
+-include $(DEPS_PRF)
+-include $(DEPS_REL)
+
+# build artifact in debug mode
+dbg: prepare_DBG $(ART_DIR)/$(ART_FULL_DBG)
+	@echo ' '
+	@echo '**** Finished building $(lastword $^) ****'
+	@echo ' '
+prepare_DBG:
+	@echo ' '
+	@echo 'Started building process for DEBUG mode...'
+$(ART_DIR)/$(ART_FULL_DBG): $(OBJS_DBG) $(LIBDEP_DBG)
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Linking $(@)'
+	@mkdir -p $(ART_DIR)
+	$(strip $(VERBOSE_DISPLAY)$(LINK) $@ $^ $(LDFLAGS_ALL) $(LDFLAGS_DBG) $(LIB_DIRS_ALL) $(LIB_DIRS_DBG) $(LIBS_DBG) $(LIBS_ALL))
+$(OBJ_DIR)/dbg/%.cpp.o: $(SRC_DIR)/%.cpp $(OBJ_DIR)/dbg/%.cpp.d
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Compiling $(<)'
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DISPLAY)$(CXX) $(CXXFLAGS_ALL) $(CXXFLAGS_DBG) $(INC_DIRS) -c $< -o $@)
+$(OBJ_DIR)/dbg/%.cpp.d: $(SRC_DIR)/%.cpp
+	@echo ' '$(VERBOSE_DEP_DEVNULL)
+	@echo 'Finding dependencies of $(<)'$(VERBOSE_DEP_DEVNULL)
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DEP_DISPLAY)$(CXX) $(CXXFLAGS_ALL) $(CXXFLAGS_DBG) $(INC_DIRS) -MM -MP -MT "$@ $(@:.d=.o)" $< > $@)
+$(OBJ_DIR)/dbg/%.cu.o: $(SRC_DIR)/%.cu $(OBJ_DIR)/dbg/%.cu.d
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Compiling $(<)'
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DISPLAY)$(CU) $(CUFLAGS_ALL) $(CUFLAGS_DBG) $(INC_DIRS) --compiler-bindir=$(CUXX) --compiler-options="$(CUXXFLAGS_ALL) $(CUXXFLAGS_DBG) $(INC_DIRS)" -c $< -o $@)
+$(OBJ_DIR)/dbg/%.cu.d: $(SRC_DIR)/%.cu
+	@echo ' '$(VERBOSE_DEP_DEVNULL)
+	@echo 'Finding dependencies of $(<)'$(VERBOSE_DEP_DEVNULL)
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DEP_DISPLAY)$(CUXX) $(CUXXFLAGS_ALL) -D__CUDACC__ $(CUXXFLAGS_DBG) $(INC_DIRS) -MM -MP -MT "$@ $(@:.d=.o)" -x c++ $< > $@)
+
+# build artifact in profile mode
+prf: prepare_PRF $(ART_DIR)/$(ART_FULL_PRF)
+	@echo ' '
+	@echo '**** Finished building $(lastword $^) ****'
+	@echo ' '
+prepare_PRF:
+	@echo ' '
+	@echo 'Started building process for PROFILE mode...'
+$(ART_DIR)/$(ART_FULL_PRF): $(OBJS_PRF) $(LIBDEP_PRF)
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Linking $(@)'
+	@mkdir -p $(ART_DIR)
+	$(strip $(VERBOSE_DISPLAY)$(LINK) $@ $^ $(LDFLAGS_ALL) $(LDFLAGS_PRF) $(LIB_DIRS_ALL) $(LIB_DIRS_PRF) $(LIBS_PRF) $(LIBS_ALL))
+$(OBJ_DIR)/prf/%.cpp.o: $(SRC_DIR)/%.cpp $(OBJ_DIR)/prf/%.cpp.d
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Compiling $(<)'
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DISPLAY)$(CXX) $(CXXFLAGS_ALL) $(CXXFLAGS_PRF) $(INC_DIRS) -c $< -o $@)
+$(OBJ_DIR)/prf/%.cpp.d: $(SRC_DIR)/%.cpp
+	@echo ' '$(VERBOSE_DEP_DEVNULL)
+	@echo 'Finding dependencies of $(<)'$(VERBOSE_DEP_DEVNULL)
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DEP_DISPLAY)$(CXX) $(CXXFLAGS_ALL) $(CXXFLAGS_PRF) $(INC_DIRS) -MM -MP -MT "$@ $(@:.d=.o)" $< > $@)
+$(OBJ_DIR)/prf/%.cu.o: $(SRC_DIR)/%.cu $(OBJ_DIR)/prf/%.cu.d
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Compiling $(<)'
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DISPLAY)$(CU) $(CUFLAGS_ALL) $(CUFLAGS_PRF) $(INC_DIRS) --compiler-bindir=$(CUXX) --compiler-options="$(CUXXFLAGS_ALL) $(CUXXFLAGS_PRF) $(INC_DIRS)" -c $< -o $@)
+$(OBJ_DIR)/prf/%.cu.d: $(SRC_DIR)/%.cu
+	@echo ' '$(VERBOSE_DEP_DEVNULL)
+	@echo 'Finding dependencies of $(<)'$(VERBOSE_DEP_DEVNULL)
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DEP_DISPLAY)$(CUXX) $(CUXXFLAGS_ALL) -D__CUDACC__ $(CUXXFLAGS_PRF) $(INC_DIRS) -MM -MP -MT "$@ $(@:.d=.o)" -x c++ $< > $@)
+
+# build artifact in release mode
+rel: prepare_REL $(ART_DIR)/$(ART_FULL_REL)
+	@echo ' '
+	@echo '**** Finished building $(lastword $^) ****'
+	@echo ' '
+prepare_REL:
+	@echo ' '
+	@echo 'Started building process for RELEASE mode...'
+$(ART_DIR)/$(ART_FULL_REL): $(OBJS_REL) $(LIBDEP_REL)
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Linking $(@)'
+	@mkdir -p $(ART_DIR)
+	$(strip $(VERBOSE_DISPLAY)$(LINK) $@ $^ $(LDFLAGS_ALL) $(LDFLAGS_REL) $(LIB_DIRS_ALL) $(LIB_DIRS_REL) $(LIBS_REL) $(LIBS_ALL))
+$(OBJ_DIR)/rel/%.cpp.o: $(SRC_DIR)/%.cpp $(OBJ_DIR)/rel/%.cpp.d
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Compiling $(<)'
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DISPLAY)$(CXX) $(CXXFLAGS_ALL) $(CXXFLAGS_REL) $(INC_DIRS) -c $< -o $@)
+$(OBJ_DIR)/rel/%.cpp.d: $(SRC_DIR)/%.cpp
+	@echo ' '$(VERBOSE_DEP_DEVNULL)
+	@echo 'Finding dependencies of $(<)'$(VERBOSE_DEP_DEVNULL)
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DEP_DISPLAY)$(CXX) $(CXXFLAGS_ALL) $(CXXFLAGS_REL) $(INC_DIRS) -MM -MP -MT "$@ $(@:.d=.o)" $< > $@)
+$(OBJ_DIR)/rel/%.cu.o: $(SRC_DIR)/%.cu $(OBJ_DIR)/rel/%.cu.d
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Compiling $(<)'
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DISPLAY)$(CU) $(CUFLAGS_ALL) $(CUFLAGS_REL) $(INC_DIRS) --compiler-bindir=$(CUXX) --compiler-options="$(CUXXFLAGS_ALL) $(CUXXFLAGS_REL) $(INC_DIRS)" -c $< -o $@)
+$(OBJ_DIR)/rel/%.cu.d: $(SRC_DIR)/%.cu
+	@echo ' '$(VERBOSE_DEP_DEVNULL)
+	@echo 'Finding dependencies of $(<)'$(VERBOSE_DEP_DEVNULL)
+	@mkdir -p $(@D)
+	$(strip $(VERBOSE_DEP_DISPLAY)$(CUXX) $(CUXXFLAGS_ALL) -D__CUDACC__ $(CUXXFLAGS_REL) $(INC_DIRS) -MM -MP -MT "$@ $(@:.d=.o)" -x c++ $< > $@)
+
+# delete binaries, objects and dependencies
+clean:
+	@echo ' '
+	@echo 'Deleting binaries'
+	$(strip $(VERBOSE_DISPLAY)$(RM) $(ART_DIR)/$(ART_FULL_DBG) $(ART_DIR)/$(ART_FULL_PRF) $(ART_DIR)/$(ART_FULL_REL))
+	@echo ' '$(VERBOSE_DEVNULL)
+	@echo 'Deleting objects and dependencies'
+	$(strip $(VERBOSE_DISPLAY)$(RM) -rf $(OBJ_DIR))
+	@echo ' '
+	@echo '**** Finished cleaning ****'
+	@echo ' '
+

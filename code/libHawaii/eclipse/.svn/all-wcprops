@@ -1,0 +1,29 @@
+K 25
+svn:wc:ra_dav:version-url
+V 43
+/drone4u/!svn/ver/18/code/libHawaii/eclipse
+END
+.project
+K 25
+svn:wc:ra_dav:version-url
+V 52
+/drone4u/!svn/ver/18/code/libHawaii/eclipse/.project
+END
+.cproject
+K 25
+svn:wc:ra_dav:version-url
+V 53
+/drone4u/!svn/ver/11/code/libHawaii/eclipse/.cproject
+END
+src
+K 25
+svn:wc:ra_dav:version-url
+V 47
+/drone4u/!svn/ver/11/code/libHawaii/eclipse/src
+END
+inc
+K 25
+svn:wc:ra_dav:version-url
+V 47
+/drone4u/!svn/ver/11/code/libHawaii/eclipse/inc
+END

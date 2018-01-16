@@ -1,0 +1,29 @@
+K 25
+svn:wc:ra_dav:version-url
+V 35
+/drone4u/!svn/ver/60/code/libHawaii
+END
+config.mk
+K 25
+svn:wc:ra_dav:version-url
+V 45
+/drone4u/!svn/ver/71/code/libHawaii/config.mk
+END
+makefile
+K 25
+svn:wc:ra_dav:version-url
+V 44
+/drone4u/!svn/ver/11/code/libHawaii/makefile
+END
+rules.mk
+K 25
+svn:wc:ra_dav:version-url
+V 44
+/drone4u/!svn/ver/60/code/libHawaii/rules.mk
+END
+COPYING
+K 25
+svn:wc:ra_dav:version-url
+V 43
+/drone4u/!svn/ver/11/code/libHawaii/COPYING
+END
